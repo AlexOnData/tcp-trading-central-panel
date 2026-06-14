@@ -1,0 +1,184 @@
+erDiagram
+
+    DIM_COMPANIES ||--o{ DIM_TRADINGFLOORS : "company_id"
+    DIM_TRADINGFLOORS ||--o{ DIM_TEAMS : "floor_id"
+    DIM_TEAMS ||--o{ DIM_EMPLOYEES : "team_id"
+    DIM_TRADINGFLOORS ||--o{ DIM_EMPLOYEES : "floor_id"
+    DIM_COMPANIES ||--o{ DIM_EMPLOYEES : "company_id"
+    DIM_EMPLOYEES ||--o{ DIM_EMPLOYEES : "manager_employee_id (self-FK)"
+    DIM_EMPLOYEES ||--o{ DIM_ACCOUNTS : "trader_id"
+    DIM_ACCOUNTS ||--o{ FACT_TRADES : "account_id"
+    DIM_EMPLOYEES ||--o{ FACT_TRADES : "trader_id"
+    DIM_MARKETS ||--o{ FACT_TRADES : "market_id"
+    DIM_SESSIONS ||--o{ FACT_TRADES : "session_id"
+    DIM_ORDERTYPE ||--o{ FACT_TRADES : "order_type_id"
+    DIM_DATE ||--o{ FACT_TRADES : "trade_date_ro (persisted computed)"
+    DIM_EMPLOYEES ||--o{ CONFIG_CAPITAL : "trader_id"
+    DIM_EMPLOYEES ||--o{ DIM_USERROLES : "employee_id"
+    DIM_EMPLOYEES ||--o{ FACT_DAILYTRADERPNL : "employee_id"
+    DIM_DATE ||--o{ FACT_DAILYTRADERPNL : "trade_date_ro"
+
+    DIM_COMPANIES {
+        int company_id PK
+        nvarchar legal_name UK
+        nvarchar short_name
+        char country_code
+        char base_currency
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }
+
+    DIM_TRADINGFLOORS {
+        int floor_id PK
+        int company_id FK
+        nvarchar city
+        varchar floor_code UK
+        bit is_primary_hq
+        date opened_on
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }
+
+    DIM_TEAMS {
+        int team_id PK
+        int floor_id FK
+        nvarchar team_name
+        varchar team_code UK
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }
+
+    DIM_EMPLOYEES {
+        int employee_id PK
+        int company_id FK
+        int floor_id FK
+        int team_id FK
+        int manager_employee_id FK
+        nvarchar first_name
+        nvarchar last_name
+        nvarchar email UK
+        varchar employee_role
+        date hire_date
+        bit is_active
+        uniqueidentifier aad_object_id UK
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }
+
+    DIM_ACCOUNTS {
+        int account_id PK
+        int trader_id FK
+        varchar account_code UK
+        varchar account_type
+        char currency
+        date opened_on
+        bit is_active
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }
+
+    DIM_MARKETS {
+        int market_id PK
+        varchar symbol UK
+        nvarchar display_name
+        varchar asset_class
+        char quote_currency
+        decimal tick_size
+        bit is_active
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }
+
+    DIM_SESSIONS {
+        int session_id PK
+        varchar session_code UK
+        nvarchar display_name
+        time start_time_local
+        time end_time_local
+        datetimeoffset created_at
+    }
+
+    DIM_ORDERTYPE {
+        int order_type_id PK
+        varchar order_type_code UK
+        nvarchar display_name
+        bit is_directional
+        datetimeoffset created_at
+    }
+
+    DIM_DATE {
+        int date_id PK
+        date calendar_date UK
+        int iso_year
+        int iso_week
+        int year
+        tinyint quarter
+        tinyint month
+        nvarchar month_name_ro
+        nvarchar month_name_en
+        tinyint day_of_month
+        tinyint day_of_week
+        bit is_weekday
+        bit is_ro_holiday
+        nvarchar ro_holiday_name
+        nvarchar en_holiday_name
+        int fiscal_year
+    }
+
+    DIM_USERROLES {
+        int user_role_id PK
+        uniqueidentifier aad_object_id UK
+        int employee_id FK
+        varchar scope
+        bit is_active
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }
+
+    FACT_TRADES {
+        varchar trade_uid PK
+        int trader_id FK
+        int account_id FK
+        int market_id FK
+        int session_id FK
+        int order_type_id FK
+        date trade_date_ro FK
+        char side
+        decimal quantity
+        decimal price_entry
+        decimal price_exit
+        datetimeoffset time_entry
+        datetimeoffset time_exit
+        decimal gross_pnl_eur
+        decimal commission_eur
+        decimal net_pnl_eur
+        decimal fx_rate_to_eur
+        bit is_open
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }
+
+    CONFIG_CAPITAL {
+        int capital_id PK
+        int trader_id FK
+        decimal amount_eur
+        datetimeoffset effective_from
+        datetimeoffset effective_to
+        nvarchar note
+        datetimeoffset created_at
+    }
+
+    FACT_DAILYTRADERPNL {
+        int daily_pnl_id UK
+        int employee_id PK
+        date trade_date_ro PK
+        int trade_count
+        decimal gross_pnl_eur_total
+        decimal net_pnl_eur_total
+        decimal commission_eur_total
+        int win_count
+        int loss_count
+        decimal avg_holding_minutes
+        datetimeoffset created_at
+        datetimeoffset updated_at
+    }

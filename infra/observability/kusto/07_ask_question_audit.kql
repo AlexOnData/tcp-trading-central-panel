@@ -1,0 +1,27 @@
+// =============================================================================
+// 07 — Last 50 distinct /api/ask questions (PII-redacted, hash-only)
+// =============================================================================
+// Source: docs/design/03_architecture.md §12.2 query 7.
+// Workbook tile: "Recent question fingerprints" — manual audit anchor.
+//
+// PII posture (docs/security/threat_model.md S05 + GDPR §13):
+//   - We never persist the question text in App Insights.
+//   - The audit trail is keyed by SHA-256 of the canonical question — enough
+//     to detect repetition, not enough to reverse to the original prompt.
+//   - The `oid_suffix` (last 8 hex chars of the AAD object id) is logged but
+//     NOT shown in this query — listing both q_hash and oid_suffix in the same
+//     row could enable correlation attacks against a small user population
+//     (~32 employees). The PII-redaction sanity test
+//     (tests/integration/test_telemetry_no_pii.py) enforces this rule.
+// =============================================================================
+
+traces
+| where timestamp > ago(30d)
+| where customDimensions["event"] == "tcp.ask.audit"
+| extend q_hash = tostring(customDimensions["question_sha256"])
+| where isnotempty(q_hash)
+| summarize
+    last_seen = max(timestamp),
+    occurrences = count()
+    by q_hash
+| top 50 by last_seen desc

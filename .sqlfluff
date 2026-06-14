@@ -1,0 +1,18 @@
+[sqlfluff]
+dialect = tsql
+templater = raw
+# Rule codes target SQLFluff 3.x. Legacy 1.x equivalents:
+#   LT02 (was L036) — long-line indentation
+#   LT05 (was L016) — line-length / wrapping
+exclude_rules = LT02, LT05
+max_line_length = 140
+
+[sqlfluff:indentation]
+tab_space_size = 4
+indent_unit = space
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = pascal

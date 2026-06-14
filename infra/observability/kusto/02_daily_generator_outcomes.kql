@@ -1,0 +1,27 @@
+// =============================================================================
+// 02 — Daily generator (TimerTrigger_DailyGenerator) outcomes
+// =============================================================================
+// Source: docs/design/03_architecture.md §12.2 query 2.
+// Workbook tile: "Daily generator success rate" — 30-day strip.
+// SLO: docs/observability/slo.md SLI-2 — daily-generator success rate ≥ 99 %
+//      over any rolling 30-day window (≤ 1 failure permitted).
+// Alert anchor: alerts.bicep "tcp-alert-daily-generator-failed" (1 failure / 24 h).
+//
+// Notes:
+//   - operation_Name emitted by the Functions Python runtime is the decorated
+//     function name (`daily_generator`).
+//   - Mon–Fri only — RO public holidays still emit a request row but the runner
+//     short-circuits with status='skipped_holiday'; treat those as Successes.
+// =============================================================================
+
+requests
+| where operation_Name == "daily_generator"
+| where timestamp > ago(30d)
+| extend day_ro = bin(timestamp, 1d)
+| summarize
+    Runs = count(),
+    Successes = countif(success == true),
+    Failures = countif(success == false)
+    by day_ro
+| extend success_rate_pct = round(100.0 * Successes / iif(Runs == 0, 1, Runs), 2)
+| order by day_ro asc

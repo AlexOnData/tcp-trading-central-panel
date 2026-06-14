@@ -1,0 +1,26 @@
+// =============================================================================
+// 09 — /api/ask rate-limit hits (per-OID 429 returns)
+// =============================================================================
+// Workbook tile: "Rate-limit refusals (last 24h)".
+// Alert anchor: alerts.bicep "tcp-alert-rate-limit-spike" — fires when more
+//   than 50 hits per hour land across all OIDs (suggests credential sharing,
+//   abuse, or a runaway client; 32 employees × 10/min budget = 19 200/hour
+//   theoretical ceiling, so 50 is a low signal-to-noise threshold).
+//
+// In-process bookkeeping (function_app/triggers/ask.py _check_and_record_rate_limit)
+// emits a `tcp.func.ask.rate_limited` warning every time it refuses; that
+// becomes a `traces` row with `severityLevel = 2` (warning).
+//
+// `oid_suffix` is the last 8 hex chars of the user's AAD object id — full OID
+// is never logged (security MN-02 from Etapa-6 review).
+// =============================================================================
+
+traces
+| where timestamp > ago(24h)
+| where message has "tcp.func.ask.rate_limited"
+| extend oid_suffix = tostring(customDimensions["oid_suffix"])
+| summarize
+    refusals = count(),
+    distinct_oid_suffixes = dcount(oid_suffix)
+    by bin(timestamp, 1h)
+| order by timestamp asc

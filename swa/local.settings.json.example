@@ -1,0 +1,23 @@
+{
+  "$comment": [
+    "Template for `swa start` local-emulator settings. Copy this file to",
+    "`local.settings.json` (gitignored) and override values for your machine.",
+    "",
+    "The SWA CLI does not strictly require this file — `swa start swa",
+    "--api-location ../function_app` works with sensible defaults — but a few",
+    "knobs are useful when iterating on the chat UI locally.",
+    "",
+    "Reference: https://azure.github.io/static-web-apps-cli/docs/cli/swa-start"
+  ],
+  "host": "localhost",
+  "port": 4280,
+  "apiLocation": "../function_app",
+  "appLocation": ".",
+  "outputLocation": ".",
+  "swaConfigLocation": "../function_app",
+  "$auth_note": [
+    "When `swa start` runs, the SWA CLI injects a mock /.auth/me principal so",
+    "the chat UI does not redirect to AAD. The mock identity is configurable",
+    "via the emulator UI at http://localhost:4280/.auth/me."
+  ]
+}

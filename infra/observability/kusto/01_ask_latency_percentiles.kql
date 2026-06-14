@@ -1,0 +1,38 @@
+// =============================================================================
+// 01 — /api/ask end-to-end latency percentiles (p50 / p95 / p99)
+// =============================================================================
+// Source: docs/design/03_architecture.md §12.2 query 1.
+// Workbook tile: "Assistant latency (p50/p95/p99)" on the canonical dashboard.
+// SLO: docs/observability/slo.md SLI-1 — see "p95 latency objective".
+// Alert anchor: alerts.bicep "tcp-alert-ask-p95-latency" (p95 > 4 s sustained).
+//
+// Parameters:
+//   {timespan} — App Insights workbook parameter; defaults to 7d when run ad-hoc.
+//
+// Notes:
+//   - operation_Name is set by the Python azure-functions runtime to the trigger
+//     function name. Our HTTP trigger function is `ask` (decorated in
+//     function_app/triggers/ask.py); the runtime emits operation_Name='ask'.
+//   - duration is in milliseconds (App Insights default).
+//   - 1h bin matches the workbook x-axis density; coarser bins blur SLO breaches.
+// =============================================================================
+
+requests
+| where operation_Name == "ask"
+// obs-MA-02: SLI-3 measures p95 of *successful* warm requests; refusals and
+// rate-limit responses must not pollute the percentile distribution. The
+// alert query and the workbook tile both apply this filter so the dashboard
+// percentile reads the same population as the alert.
+| where success == true
+| where timestamp > ago(7d)
+| summarize
+    p50_ms = percentile(duration, 50),
+    p95_ms = percentile(duration, 95),
+    p99_ms = percentile(duration, 99),
+    samples = count()
+    by bin(timestamp, 1h)
+// obs-MI-03: only render windows with at least 5 samples to keep an isolated
+// cold-start outlier from dominating the line.
+| where samples > 5
+| order by timestamp asc
+| render timechart

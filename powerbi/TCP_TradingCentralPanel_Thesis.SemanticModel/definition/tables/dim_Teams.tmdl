@@ -1,0 +1,53 @@
+table dim_Teams
+	lineageTag: f1000003-0000-0000-0000-000000000000
+
+	column team_id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: f1000003-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: team_id
+
+	column floor_id
+		dataType: int64
+		isHidden
+		lineageTag: f1000003-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: floor_id
+
+	column team_name
+		dataType: string
+		lineageTag: f1000003-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: team_name
+
+	column team_code
+		dataType: string
+		lineageTag: f1000003-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: team_code
+
+	column created_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000003-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: created_at
+
+	column updated_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000003-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: updated_at
+
+	partition dim_Teams_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="dim_Teams"]}[Data]
+				in
+					Data
+

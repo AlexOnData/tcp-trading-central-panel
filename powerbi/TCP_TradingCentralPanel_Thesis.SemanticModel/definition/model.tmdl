@@ -1,0 +1,31 @@
+model Model
+	culture: ro-RO
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	discourageImplicitMeasures
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation PBI_QueryOrder = ["dim_Companies","dim_TradingFloors","dim_Teams","dim_Employees","dim_Accounts","dim_Markets","dim_Sessions","dim_OrderType","dim_Date","config_Capital","fact_Trades","fact_DailyTraderPnL","SqlServer","SqlDatabase"]
+
+annotation __PBI_TimeIntelligenceEnabled = 0
+
+annotation PBI_ProTooling = ["DevMode"]
+
+ref table dim_Companies
+ref table dim_TradingFloors
+ref table dim_Teams
+ref table dim_Employees
+ref table dim_Accounts
+ref table dim_Markets
+ref table dim_Sessions
+ref table dim_OrderType
+ref table dim_Date
+ref table config_Capital
+ref table fact_Trades
+ref table fact_DailyTraderPnL
+ref table _Measures
+
+ref cultureInfo ro-RO
+

@@ -1,0 +1,65 @@
+/// Capital baseline reference (effective-dated). Disconnected from the star on purpose: the global
+/// baseline (trader_id = blank) and any per-trader overrides are read by the 'Capital Baseline' measure,
+/// so capital is never hard-coded in DAX.
+table config_Capital
+	lineageTag: f100000a-0000-0000-0000-000000000000
+
+	column capital_id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: f100000a-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: capital_id
+
+	column trader_id
+		dataType: int64
+		isHidden
+		lineageTag: f100000a-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: trader_id
+
+	column amount_eur
+		dataType: double
+		formatString: #,##0.00 €
+		lineageTag: f100000a-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: amount_eur
+
+	column effective_from
+		dataType: dateTime
+		isHidden
+		lineageTag: f100000a-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: effective_from
+
+	column effective_to
+		dataType: dateTime
+		isHidden
+		lineageTag: f100000a-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: effective_to
+
+	column note
+		dataType: string
+		isHidden
+		lineageTag: f100000a-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: note
+
+	column created_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f100000a-0000-0000-0000-000000000007
+		summarizeBy: none
+		sourceColumn: created_at
+
+	partition config_Capital_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="config_Capital"]}[Data]
+				in
+					Data
+

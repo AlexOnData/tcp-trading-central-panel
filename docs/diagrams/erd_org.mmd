@@ -1,0 +1,65 @@
+erDiagram
+
+    DIM_COMPANIES ||--o{ DIM_TRADINGFLOORS : ""
+    DIM_TRADINGFLOORS ||--o{ DIM_TEAMS : ""
+    DIM_TEAMS ||--o{ DIM_EMPLOYEES : ""
+    DIM_TRADINGFLOORS ||--o{ DIM_EMPLOYEES : ""
+    DIM_COMPANIES ||--o{ DIM_EMPLOYEES : ""
+    DIM_EMPLOYEES ||--o{ DIM_EMPLOYEES : ""
+    DIM_EMPLOYEES ||--o{ DIM_ACCOUNTS : ""
+    DIM_EMPLOYEES ||--o{ CONFIG_CAPITAL : ""
+    DIM_EMPLOYEES ||--o{ DIM_USERROLES : ""
+
+    DIM_COMPANIES {
+        int company_id PK
+        nvarchar legal_name UK
+        char country_code
+        char base_currency
+    }
+
+    DIM_TRADINGFLOORS {
+        int floor_id PK
+        int company_id FK
+        nvarchar city
+        varchar floor_code UK
+    }
+
+    DIM_TEAMS {
+        int team_id PK
+        int floor_id FK
+        nvarchar team_name
+        varchar team_code UK
+    }
+
+    DIM_EMPLOYEES {
+        int employee_id PK
+        int team_id FK
+        int manager_employee_id FK
+        nvarchar first_name
+        nvarchar last_name
+        nvarchar email UK
+        varchar employee_role
+        guid aad_object_id UK
+    }
+
+    DIM_ACCOUNTS {
+        int account_id PK
+        int trader_id FK
+        varchar account_code UK
+        char currency
+        bit is_active
+    }
+
+    DIM_USERROLES {
+        int user_role_id PK
+        guid aad_object_id UK
+        int employee_id FK
+        varchar scope
+    }
+
+    CONFIG_CAPITAL {
+        int capital_id PK
+        int trader_id FK
+        dec amount_eur
+        dto effective_from
+    }

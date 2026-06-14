@@ -1,0 +1,34 @@
+# =============================================================================
+# Cross-OS line-ending pins.
+#
+# Default to git's autodetection — text gets LF in the repo, native EOL in the
+# working tree. Specific files that ARM / sqlcmd / portal tooling reads as a
+# byte string are pinned to LF to keep cross-OS deploys byte-equivalent.
+# =============================================================================
+
+* text=auto
+
+# Bicep `loadTextContent('../observability/workbook.json')` embeds the file
+# verbatim into the ARM template. Without an explicit `eol=lf` pin, a Windows
+# checkout with `core.autocrlf=true` rewrites the JSON to CRLF on checkout,
+# then `loadTextContent` ships CRLF bytes — and `az deployment sub what-if`
+# reports a phantom diff on every cross-OS push. See arch-MA-03 in the Etapa-8
+# cloud-architect review.
+infra/observability/workbook.json text eol=lf
+
+# Migration files: the canonicalised SHA-256 must be reproducible across
+# Windows and Linux deploys. The canonicaliser strips CRLF but the placeholder
+# substitution path in `infra/scripts/postprovision.ps1` reads raw bytes. See
+# arch-MA-04 in the Etapa-8 cloud-architect review.
+db/migrations/*.sql text eol=lf
+
+# Kusto query files are read verbatim by the Etapa-12 deploy pipeline (when it
+# starts mirroring .kql into workbook.json automatically). Pin now to avoid a
+# silent regression later.
+infra/observability/kusto/*.kql text eol=lf
+
+# Shell scripts must stay LF or they will not execute on Linux.
+*.sh text eol=lf
+
+# PowerShell tolerates either ending but pinning CRLF avoids editor surprises.
+*.ps1 text eol=crlf

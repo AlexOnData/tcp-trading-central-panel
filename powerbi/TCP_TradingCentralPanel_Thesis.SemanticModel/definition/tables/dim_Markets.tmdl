@@ -1,0 +1,72 @@
+table dim_Markets
+	lineageTag: f1000006-0000-0000-0000-000000000000
+
+	column market_id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: f1000006-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: market_id
+
+	column symbol
+		dataType: string
+		lineageTag: f1000006-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: symbol
+
+	column display_name
+		dataType: string
+		lineageTag: f1000006-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: display_name
+
+	column asset_class
+		dataType: string
+		lineageTag: f1000006-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: asset_class
+
+	column quote_currency
+		dataType: string
+		lineageTag: f1000006-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: quote_currency
+
+	column tick_size
+		dataType: double
+		isHidden
+		formatString: #,##0.00000000
+		lineageTag: f1000006-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: tick_size
+
+	column is_active
+		dataType: boolean
+		lineageTag: f1000006-0000-0000-0000-000000000007
+		summarizeBy: none
+		sourceColumn: is_active
+
+	column created_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000006-0000-0000-0000-000000000008
+		summarizeBy: none
+		sourceColumn: created_at
+
+	column updated_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000006-0000-0000-0000-000000000009
+		summarizeBy: none
+		sourceColumn: updated_at
+
+	partition dim_Markets_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="dim_Markets"]}[Data]
+				in
+					Data
+

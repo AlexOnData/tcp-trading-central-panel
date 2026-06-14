@@ -1,0 +1,29 @@
+%% AI assistant scope vs Power BI scope — routing heuristic
+%%
+%% Etapa-13 deliverable per ADR-006 D-8. Visual companion to the §7
+%% routing table in `docs/design/ai_prompt_cache_contents.md`.
+%%
+%% The diagram is a decision flowchart: where does a given user question
+%% land? AI assistant (single SELECT + ≤ 1 TVF, RLS-aware) vs Power BI
+%% semantic model (multi-period, ranked windows, drawdown analytics).
+flowchart TB
+    classDef question fill:#fff6d6,stroke:#c08d00,color:#000
+    classDef ai fill:#dbe9ff,stroke:#1f6feb,color:#000
+    classDef bi fill:#e6ffe6,stroke:#2da44e,color:#000
+    classDef decision fill:#ffe6e6,stroke:#cf222e,color:#000
+
+    q[User question]:::question
+    d1{Single period<br/>or current snapshot?}:::decision
+    d2{Multi-period<br/>comparison, ranking,<br/>or rolling window?}:::decision
+    d3{Leadership multiplier or<br/>cross-trader drawdown<br/>aggregation?}:::decision
+
+    ai[AI assistant<br/>/api/ask]:::ai
+    bi[Power BI report<br/>69 DAX measures]:::bi
+
+    q --> d1
+    d1 -->|Yes| ai
+    d1 -->|No| d2
+    d2 -->|Yes| bi
+    d2 -->|No| d3
+    d3 -->|Yes| bi
+    d3 -->|No| ai

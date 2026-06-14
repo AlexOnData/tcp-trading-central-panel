@@ -1,0 +1,37 @@
+// =============================================================================
+// 04 — Python worker cold-start frequency
+// =============================================================================
+// Source: docs/design/03_architecture.md §12.2 query 4.
+// Workbook tile: "Function App cold starts vs warm starts (last 7d)".
+//
+// Why this matters:
+//   - Y1 Consumption plan idles after ~20 min; the Warmup Timer keeps the worker
+//     hot Mon–Fri but the AskAssistant trigger may still hit a cold worker on
+//     weekends or after AAD outages.
+//   - SLO budget: docs/observability/slo.md SLI-1 (p95 ≤ 3 s) tolerates ≤ 1 cold
+//     start per business hour — the alert wires fire when this is exceeded.
+// =============================================================================
+
+traces
+| where timestamp > ago(7d)
+| where customDimensions["Category"] == "Host.Startup"
+| where message has "Worker process started"
+| extend startup_ms = todouble(customDimensions["StartupDurationMs"])
+| extend bucket = case(
+    isnull(startup_ms),  "unknown",
+    startup_ms <= 1000,  "warm",
+    startup_ms <= 2000,  "lukewarm",
+    "cold"
+  )
+| summarize
+    cold_starts = countif(bucket == "cold"),
+    lukewarm_starts = countif(bucket == "lukewarm"),
+    warm_starts = countif(bucket == "warm"),
+    unknown_starts = countif(bucket == "unknown")
+    by bin(timestamp, 1h)
+| order by timestamp asc
+// obs-MA-03: the `unknown` bucket is the signal that the Functions runtime
+// emission shape changed (e.g. StartupDurationMs renamed). Dropping it from
+// the workbook tile is what made the original drift catastrophic — 100 %
+// regression to "unknown" would look like zero cold starts. The workbook
+// tile and this query both project the bucket.

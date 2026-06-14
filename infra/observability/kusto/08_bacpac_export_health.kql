@@ -1,0 +1,43 @@
+// =============================================================================
+// 08 — BACPAC weekly export health (ADR-004)
+// =============================================================================
+// Source: docs/design/03_architecture.md §12.2 query 8.
+// Workbook tile: "BACPAC export — last 30d" + missed-run banner.
+// Alert anchor: alerts.bicep "tcp-alert-bacpac-missed" — fires when no
+//   `tcp.bacpac.complete` event with status='succeeded' has been emitted in
+//   the last 8 days (one Sunday window + 24 h grace).
+//
+// Both legacy customMetrics and current structured-log shapes are unioned so
+// the dashboard survives the Etapa-12 metric migration without rewrites.
+// =============================================================================
+
+let from_traces =
+    traces
+    | where timestamp > ago(30d)
+    | where customDimensions["event"] in ("tcp.bacpac.complete", "tcp.bacpac.failed", "tcp.bacpac.skipped")
+    | extend
+        duration_ms = tolong(customDimensions["duration_ms"]),
+        size_bytes = tolong(customDimensions["size_bytes"]),
+        status = tostring(customDimensions["status"])
+    | project timestamp, duration_ms, size_bytes, status;
+let from_metrics =
+    customMetrics
+    | where timestamp > ago(30d)
+    | where name in ("tcp.bacpac.duration_ms", "tcp.bacpac.size_bytes")
+    | summarize value = avg(value) by name, timestamp
+    | evaluate pivot(name, avg(value), timestamp)
+    | extend
+        duration_ms = tolong(coalesce(column_ifexists("tcp.bacpac.duration_ms", real(0)), 0.0)),
+        size_bytes = tolong(coalesce(column_ifexists("tcp.bacpac.size_bytes", real(0)), 0.0)),
+        status = "metric"
+    | project timestamp, duration_ms, size_bytes, status;
+union from_traces, from_metrics
+| summarize
+    runs = count(),
+    successes = countif(status == "succeeded"),
+    skipped = countif(status == "already_exists"),
+    failures = countif(status in ("failed", "Failed", "Canceled")),
+    avg_duration_ms = avg(duration_ms),
+    avg_size_mb = round(avg(size_bytes) / 1024.0 / 1024.0, 2)
+    by bin(timestamp, 7d)
+| order by timestamp desc

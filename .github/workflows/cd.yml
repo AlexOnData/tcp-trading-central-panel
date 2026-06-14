@@ -1,0 +1,290 @@
+name: cd
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: provision
+    runs-on: ubuntu-24.04
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      resource_group: ${{ steps.output.outputs.resource_group }}
+      function_app_name: ${{ steps.output.outputs.function_app_name }}
+      function_app_hostname: ${{ steps.output.outputs.function_app_hostname }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: azure login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: resolve OIDC SP object id
+        id: resolve_principal
+        run: |
+          PRINCIPAL_ID=$(az ad sp show --id ${{ vars.AZURE_CLIENT_ID }} --query id -o tsv)
+          if [ -z "$PRINCIPAL_ID" ]; then
+            echo "ERROR: Could not resolve OIDC service principal object id for client ${{ vars.AZURE_CLIENT_ID }}"
+            exit 1
+          fi
+          echo "principal_id=$PRINCIPAL_ID" >> $GITHUB_OUTPUT
+          echo "OIDC service principal object id: $PRINCIPAL_ID"
+
+      - name: set up azd
+        uses: Azure/setup-azd@v1.0.0
+
+      - name: azd auth login
+        run: |
+          azd auth login \
+            --client-id ${{ vars.AZURE_CLIENT_ID }} \
+            --federated-credential-provider github \
+            --tenant-id ${{ vars.AZURE_TENANT_ID }}
+
+      - name: azd env new
+        run: |
+          azd env new tcp-prod \
+            --location westeurope \
+            --no-prompt
+
+      - name: seed principalId into azd env
+        run: |
+          azd env set AZURE_PRINCIPAL_ID "${{ steps.resolve_principal.outputs.principal_id }}"
+          azd env set AZURE_PRINCIPAL_TYPE "ServicePrincipal"
+          echo "azd env hydrated with AZURE_PRINCIPAL_ID and AZURE_PRINCIPAL_TYPE."
+
+      - name: validate environment
+        run: |
+          RG_ACTUAL=$(azd env get-value AZURE_RESOURCE_GROUP)
+          if [ "$RG_ACTUAL" != "rg-tcp-prod-weu" ]; then
+            echo "ERROR: Environment points to RG '$RG_ACTUAL', expected 'rg-tcp-prod-weu'"
+            exit 1
+          fi
+          PRINCIPAL_ACTUAL=$(azd env get-value AZURE_PRINCIPAL_ID)
+          if [ -z "$PRINCIPAL_ACTUAL" ]; then
+            echo "ERROR: AZURE_PRINCIPAL_ID is empty in azd env; principalId seed step failed."
+            exit 1
+          fi
+          echo "Environment validation passed: RG=$RG_ACTUAL principalId=$PRINCIPAL_ACTUAL"
+
+      - name: azd provision
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: azd provision --no-prompt
+
+      - name: capture outputs
+        id: output
+        run: |
+          RG=$(azd env get-values | grep AZURE_RESOURCE_GROUP | cut -d'=' -f2 | tr -d '"')
+          FUNC_APP=$(azd env get-values | grep AZURE_FUNCTION_APP_NAME | cut -d'=' -f2 | tr -d '"')
+          FUNC_HOSTNAME=$(azd env get-values | grep AZURE_FUNCTION_APP_DEFAULT_HOSTNAME | cut -d'=' -f2 | tr -d '"')
+
+          # Assert that the hostname is not empty
+          if [ -z "$FUNC_HOSTNAME" ]; then
+            echo "ERROR: AZURE_FUNCTION_APP_DEFAULT_HOSTNAME output is empty"
+            exit 1
+          fi
+
+          echo "resource_group=${RG}" >> $GITHUB_OUTPUT
+          echo "function_app_name=${FUNC_APP}" >> $GITHUB_OUTPUT
+          echo "function_app_hostname=${FUNC_HOSTNAME}" >> $GITHUB_OUTPUT
+
+          echo "Provisioning complete:"
+          echo "  Resource Group: ${RG}"
+          echo "  Function App: ${FUNC_APP}"
+          echo "  Hostname: ${FUNC_HOSTNAME}"
+
+  deploy:
+    name: deploy
+    needs: provision
+    runs-on: ubuntu-24.04
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: azure login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: set up azd
+        uses: Azure/setup-azd@v1.0.0
+
+      - name: azd auth login
+        run: |
+          azd auth login \
+            --client-id ${{ vars.AZURE_CLIENT_ID }} \
+            --federated-credential-provider github \
+            --tenant-id ${{ vars.AZURE_TENANT_ID }}
+
+      - name: azd deploy api
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: azd deploy api --no-prompt
+
+      - name: substitute SWA config placeholders
+        # Etapa-10 arch10-CR-03 fix: the `deploy` job runs on a fresh runner,
+        # so the postprovision Step 2c substitution from the `provision` job
+        # is not on this filesystem. Re-apply the SWA-FORWARDED-SECRET swap
+        # here (the `<TENANT_ID>` placeholder is gone after arch10-CR-02 —
+        # left the replace pattern in for forward-compat) so `azd deploy web`
+        # uploads a working config.
+        run: |
+          set -euo pipefail
+          RG="${{ needs.provision.outputs.resource_group }}"
+          KV_NAME=$(az resource list -g "$RG" --resource-type Microsoft.KeyVault/vaults --query "[0].name" -o tsv)
+          if [ -z "$KV_NAME" ]; then
+            echo "ERROR: could not resolve Key Vault name in resource group $RG"
+            exit 1
+          fi
+          SWA_SECRET=$(az keyvault secret show --vault-name "$KV_NAME" --name SWA-FORWARDED-SECRET --query value -o tsv)
+          if [ -z "$SWA_SECRET" ]; then
+            echo "ERROR: SWA-FORWARDED-SECRET not found in $KV_NAME"
+            exit 1
+          fi
+          python3 - swa/staticwebapp.config.json "$SWA_SECRET" <<'PYEOF'
+          import sys
+          path, secret = sys.argv[1], sys.argv[2]
+          with open(path, encoding="utf-8") as f:
+              content = f.read()
+          content = content.replace("<value-set-by-postprovision>", secret)
+          with open(path, "w", encoding="utf-8", newline="") as f:
+              f.write(content)
+          PYEOF
+          echo "SWA config substitution complete."
+
+      - name: azd deploy web
+        # Uploads swa/ as-is (substituted in the step above).
+        run: azd deploy web --no-prompt
+
+  smoke:
+    name: smoke
+    needs: [provision, deploy]
+    runs-on: ubuntu-24.04
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: azure login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: set up sqlcmd
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mssql-tools18
+
+      - name: wait for function app
+        run: sleep 30
+
+      - name: ping function app
+        run: |
+          HOSTNAME="${{ needs.provision.outputs.function_app_hostname }}"
+          STATUS=$(curl -fsS "https://${HOSTNAME}/api/ping" | jq -r '.status' || echo "failed")
+          echo "Function app status: ${STATUS}"
+          if [ "${STATUS}" != "warm" ] && [ "${STATUS}" != "resumed" ]; then
+            echo "ERROR: Function app did not respond correctly"
+            exit 1
+          fi
+
+      - name: smoke test database
+        run: |
+          RG="${{ needs.provision.outputs.resource_group }}"
+          SQL_SERVER=$(az sql server list -g "${RG}" --query "[0].name" -o tsv)
+          SQL_DB=$(az sql db list -g "${RG}" -s "${SQL_SERVER}" --query "[0].name" -o tsv)
+          SQL_FQDN="${SQL_SERVER}.database.windows.net"
+
+          # Use OIDC token to connect
+          TOKEN=$(az account get-access-token --resource https://database.windows.net -o tsv --query accessToken)
+
+          sqlcmd -S "${SQL_FQDN}" -d "${SQL_DB}" -l 30 \
+            -G \
+            -Q "SELECT script_name, applied_at_utc, checksum FROM dbo.schema_history ORDER BY applied_at_utc DESC;" \
+            -h -1 \
+            -w 200 \
+            -b 2>&1 | tee query_out.txt
+          SQLCMD_EXIT=${PIPESTATUS[0]}
+
+          # arch-CR-03 fix: `grep -q "...|..."` was BRE (literal pipe),
+          # never matched. Use `-Eq` for ERE alternation so the pre-V001
+          # short-circuit actually fires; otherwise a broken bootstrap
+          # silently took the "no placeholder found" path and passed.
+          if grep -Eq "Invalid object name.*schema_history|Cannot find.*schema_history" query_out.txt; then
+            echo "INFO: schema_history not yet deployed (pre-V001); skipping smoke test"
+            exit 0
+          fi
+          if [ "${SQLCMD_EXIT}" -ne 0 ]; then
+            echo "ERROR: schema_history query failed unexpectedly"
+            cat query_out.txt
+            exit 1
+          fi
+
+          # arch-CR-03 fix: require at least one schema_history row before
+          # asserting absence of placeholders. Without this guard an empty
+          # result trivially passes the placeholder grep.
+          ROW_COUNT=$(grep -cE '^V[0-9]+__.*\.sql' query_out.txt || true)
+          if [ "${ROW_COUNT}" -lt 1 ]; then
+            echo "ERROR: schema_history returned zero rows; cannot assert checksum integrity."
+            cat query_out.txt
+            exit 1
+          fi
+
+          # RR-09 assertion: every recorded migration must carry a real
+          # SHA-256 checksum. Catches the case where postprovision Step 0
+          # failed to substitute the placeholder.
+          if grep -Eq "__V[0-9]+_CHECKSUM__|TODO-checksum-set-by-CI|sentinel-no-checksum-supplied" query_out.txt; then
+            echo "ERROR: schema_history contains an unsubstituted checksum placeholder."
+            echo "       postprovision Step 0 must have failed to render the migration."
+            cat query_out.txt
+            exit 1
+          fi
+
+      - name: assert checksum integrity
+        run: |
+          # Re-compute checksums from the repo source. This is the deploy-time
+          # leg of the RR-09 detector: it asserts the migration files canonicalise
+          # to a valid SHA-256 hex (no encoding regressions, no missing files).
+          # The cross-check against schema_history is the visual diff in
+          # query_out.txt above; a future hardening pass folds it into a
+          # structural compare (tracked in slo.md §6).
+          python3 scripts/compute_migration_checksum.py --ci
+
+      - name: emit summary
+        if: always()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## Deployment Summary
+
+          | Resource | Value |
+          |----------|-------|
+          | Resource Group | ${{ needs.provision.outputs.resource_group }} |
+          | Function App | ${{ needs.provision.outputs.function_app_name }} |
+          | Hostname | ${{ needs.provision.outputs.function_app_hostname }} |
+          | Status | ${{ job.status }} |
+          EOF

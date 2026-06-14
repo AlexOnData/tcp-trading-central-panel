@@ -1,0 +1,74 @@
+// =============================================================================
+// 03 — Anthropic token usage + EUR cost projection (last 30 days)
+// =============================================================================
+// Source: docs/design/03_architecture.md §12.2 query 3.
+// Workbook tile: "Anthropic token spend (EUR estimate)".
+// Cost model anchor: 03_architecture.md §10 — claude-haiku-4-5 prices in USD,
+//   converted to EUR at 1.0 USD ≈ 0.92 EUR (re-pin on any Anthropic price change).
+//
+// Token telemetry is currently emitted as structured-log dimensions on the
+// `traces` table (RR-06 in docs/security/threat_model.md). The query handles
+// both shapes so a future migration to true customMetrics (Etapa-12 polish) is
+// transparent: we union the two sources and let the missing one contribute 0.
+//
+// Pricing (USD per 1M tokens, claude-haiku-4-5, validated 2026-05-16 — re-pin
+// on Anthropic price update):
+//   input    = $1.00
+//   output   = $5.00
+//   cache_rd = $0.10
+// EUR FX:    1 USD = 0.92 EUR (rolling 30-day average, re-pinned 2026-05-16).
+//
+// USD per token:    input 1e-6, output 5e-6, cache_read 1e-7
+// EUR per token:    × 0.92
+//
+// COUPLING NOTE (Etapa-12, closes obs10-MN-04). The same four constants
+// (`usd_per_token_input`, `usd_per_token_output`, `usd_per_token_cache_read`,
+// `usd_to_eur`) are re-declared inline inside the `anthropicCostBurnAlert`
+// rule in `infra/modules/alerts.bicep` (the alert query cannot
+// `loadTextContent` this file because Bicep would emit it as a multi-line
+// literal that the ARM scheduled-query-rule resource rejects). Any edit to
+// the four constants here MUST be mirrored in `alerts.bicep` in the same
+// commit. The Bicep file carries a reciprocal comment pointing back here.
+// =============================================================================
+
+let usd_per_token_input = 1.0 / 1000000.0;
+let usd_per_token_output = 5.0 / 1000000.0;
+let usd_per_token_cache_read = 0.1 / 1000000.0;
+let usd_to_eur = 0.92;
+let from_traces =
+    traces
+    | where timestamp > ago(30d)
+    | where customDimensions["event"] == "tcp.ask.metrics"
+    | extend
+        in_t  = todouble(customDimensions["metric_input_tokens"]),
+        out_t = todouble(customDimensions["metric_output_tokens"]),
+        cr_t  = todouble(customDimensions["metric_cache_read_tokens"]);
+let from_metrics =
+    customMetrics
+    | where timestamp > ago(30d)
+    | where name in ("tcp.ask.input_tokens", "tcp.ask.output_tokens", "tcp.ask.cache_read_tokens")
+    | summarize value = sum(value) by name, timestamp
+    | evaluate pivot(name, sum(value), timestamp)
+    | extend
+        in_t  = coalesce(column_ifexists("tcp.ask.input_tokens", real(0)), 0.0),
+        out_t = coalesce(column_ifexists("tcp.ask.output_tokens", real(0)), 0.0),
+        cr_t  = coalesce(column_ifexists("tcp.ask.cache_read_tokens", real(0)), 0.0)
+    | project timestamp, in_t, out_t, cr_t;
+union from_traces, from_metrics
+| summarize
+    input_tokens = sum(in_t),
+    output_tokens = sum(out_t),
+    cache_read_tokens = sum(cr_t)
+    by bin(timestamp, 1d)
+| extend
+    est_usd =
+          input_tokens * usd_per_token_input
+        + output_tokens * usd_per_token_output
+        + cache_read_tokens * usd_per_token_cache_read,
+    est_eur =
+        ( input_tokens * usd_per_token_input
+        + output_tokens * usd_per_token_output
+        + cache_read_tokens * usd_per_token_cache_read
+        ) * usd_to_eur
+| project timestamp, input_tokens, output_tokens, cache_read_tokens, est_usd, est_eur
+| order by timestamp asc

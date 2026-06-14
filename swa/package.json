@@ -1,0 +1,6 @@
+{
+  "name": "tcp-swa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TCP Trading Central Panel SWA frontend. Vanilla HTML/JS deployed verbatim — see swa/README.md. This package.json exists only to satisfy azd's npm restore step (azure.yaml `language: js` is the closest valid value for `host: staticwebapp`); no dependencies, no build step."
+}

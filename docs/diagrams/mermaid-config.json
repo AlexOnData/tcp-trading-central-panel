@@ -1,0 +1,24 @@
+{
+  "theme": "default",
+  "themeVariables": {
+    "fontSize": "16px",
+    "primaryTextColor": "#1a1a1a",
+    "edgeLabelBackground": "#ffffff",
+    "lineColor": "#555555"
+  },
+  "er": {
+    "fontSize": 16,
+    "entityPadding": 6,
+    "minEntityWidth": 70,
+    "minEntityHeight": 16,
+    "nodeSpacing": 14,
+    "rankSpacing": 26
+  },
+  "flowchart": {
+    "diagramPadding": 8,
+    "nodeSpacing": 30,
+    "rankSpacing": 45,
+    "htmlLabels": true,
+    "padding": 8
+  }
+}

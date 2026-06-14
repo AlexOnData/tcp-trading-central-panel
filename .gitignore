@@ -1,0 +1,110 @@
+# Secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv-cache/
+
+# Azure Functions
+functions/local.settings.json
+functions/__pycache__/
+functions/.python_packages/
+function_app/local.settings.json
+function_app/__pycache__/
+function_app/.python_packages/
+.python_packages/
+# function_app/tcp/ is a build-time copy of the repo-root tcp/ package.
+# It is committed so azd picks it up; keep it — do not add to .gitignore.
+
+# Azure / IaC local state
+infra/parameters.local.json
+infra/.azd/
+.azure/
+azd.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Build artifacts
+dist/
+build/
+*.egg
+
+# LaTeX intermediate artifacts (academic thesis — Etapa 13)
+thesis/**/*.aux
+thesis/**/*.bbl
+thesis/**/*.bcf
+thesis/**/*.blg
+thesis/**/*.fdb_latexmk
+thesis/**/*.fls
+thesis/**/*.log
+thesis/**/*.out
+thesis/**/*.run.xml
+thesis/**/*.synctex.gz
+thesis/**/*.toc
+thesis/**/*.lof
+thesis/**/*.lot
+thesis/**/*.lol
+thesis/**/*.xdv
+thesis/compile*.log
+thesis/compile*.txt
+# Final + intermediate build artefacts under thesis/build/
+thesis/build/
+
+# Generated thesis figures (Mermaid renders + screenshots).
+# Only the .gitkeep sentinel under thesis/images/ is tracked.
+thesis/images/*.pdf
+thesis/images/*.png
+thesis/images/*.jpg
+thesis/images/*.jpeg
+thesis/images/*.svg
+# Exception: the faculty logo is a permanent static asset (cover page),
+# committed so the CI thesis-build renders the title page.
+!thesis/images/logo-facultate.png
+
+# Logs
+*.log
+logs/
+
+# Local upstream agent/skill source repos — used as a copy source, never committed
+.tmp_install/
+
+# Claude Code: keep .claude/{agents,skills,settings.json,STATE.md} and docs/decisions/ committed.
+# Personal overrides go to settings.local.json (gitignored below).
+.claude/settings.local.json
+
+# PowerBI Desktop user-specific cache and editor state.
+# Generated under any .SemanticModel/ or .Report/ folder when opening a .pbip in PBI Desktop.
+# Contains: cache.abf (binary AS cache), editorSettings.json + localSettings.json (user state).
+powerbi/**/.pbi/
+
+# OS / misc
+*.bak
+*.tmp

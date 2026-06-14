@@ -1,0 +1,26 @@
+services:
+  sql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: tcp-sql-dev
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${TCP_SQL_DEV_PASSWORD:-YourStrong!Passw0rd}"
+      MSSQL_PID: "Developer"
+    # Bind to the loopback interface only so the well-known dev SA password is
+    # never reachable from the LAN or a public-facing Docker host.
+    ports:
+      - "127.0.0.1:1433:1433"
+    volumes:
+      - tcp-sql-data:/var/opt/mssql
+    healthcheck:
+      test: [
+        "CMD-SHELL",
+        "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"
+      ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  tcp-sql-data:

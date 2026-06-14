@@ -1,0 +1,109 @@
+/// Periodic-snapshot fact: one row per (trader, trading day) with the day's aggregates over CLOSED trades.
+/// Rolls up to team / floor / company through dim_Employees, so a single set of measures serves every level.
+table fact_DailyTraderPnL
+	lineageTag: f100000c-0000-0000-0000-000000000000
+
+	column daily_pnl_id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: f100000c-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: daily_pnl_id
+
+	column employee_id
+		dataType: int64
+		isHidden
+		lineageTag: f100000c-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: employee_id
+
+	column trade_date_ro
+		dataType: dateTime
+		isHidden
+		formatString: dd\.MM\.yyyy
+		lineageTag: f100000c-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: trade_date_ro
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column trade_count
+		dataType: int64
+		isHidden
+		formatString: #,##0
+		lineageTag: f100000c-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: trade_count
+
+	column gross_pnl_eur_total
+		dataType: double
+		isHidden
+		formatString: #,##0.00 €
+		lineageTag: f100000c-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: gross_pnl_eur_total
+
+	column net_pnl_eur_total
+		dataType: double
+		isHidden
+		formatString: #,##0.00 €
+		lineageTag: f100000c-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: net_pnl_eur_total
+
+	column commission_eur_total
+		dataType: double
+		isHidden
+		formatString: #,##0.00 €
+		lineageTag: f100000c-0000-0000-0000-000000000007
+		summarizeBy: none
+		sourceColumn: commission_eur_total
+
+	column win_count
+		dataType: int64
+		isHidden
+		formatString: #,##0
+		lineageTag: f100000c-0000-0000-0000-000000000008
+		summarizeBy: none
+		sourceColumn: win_count
+
+	column loss_count
+		dataType: int64
+		isHidden
+		formatString: #,##0
+		lineageTag: f100000c-0000-0000-0000-000000000009
+		summarizeBy: none
+		sourceColumn: loss_count
+
+	column avg_holding_minutes
+		dataType: double
+		isHidden
+		formatString: #,##0.0
+		lineageTag: f100000c-0000-0000-0000-00000000000a
+		summarizeBy: none
+		sourceColumn: avg_holding_minutes
+
+	column created_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f100000c-0000-0000-0000-00000000000b
+		summarizeBy: none
+		sourceColumn: created_at
+
+	column updated_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f100000c-0000-0000-0000-00000000000c
+		summarizeBy: none
+		sourceColumn: updated_at
+
+	partition fact_DailyTraderPnL_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="fact_DailyTraderPnL"]}[Data]
+				in
+					Data
+

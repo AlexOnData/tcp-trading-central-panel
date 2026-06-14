@@ -1,0 +1,23 @@
+# Local-only files for the Static Web App.
+#
+# Nothing under `swa/` is build-generated — the deployment is the source tree
+# verbatim. These entries cover IDE state and any future SWA-CLI emulator
+# install which may pull in node modules.
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Possible SWA CLI emulator install or future tooling
+node_modules/
+.swa/
+swa-cli.config.json
+
+# Local-only environment overrides (template kept as `local.settings.json.example`)
+local.settings.json
+
+# OS noise
+.DS_Store
+Thumbs.db

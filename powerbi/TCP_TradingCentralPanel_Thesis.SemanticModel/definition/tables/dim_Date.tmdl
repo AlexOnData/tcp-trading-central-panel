@@ -1,0 +1,144 @@
+/// Canonical date dimension. Marked as the model date table (dataCategory: Time, key = calendar_date).
+/// Auto date/time is OFF at the model level, so this is the single source of date intelligence.
+table dim_Date
+	lineageTag: f1000008-0000-0000-0000-000000000000
+	dataCategory: Time
+
+	column date_id
+		dataType: int64
+		isHidden
+		lineageTag: f1000008-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: date_id
+
+	column calendar_date
+		dataType: dateTime
+		isKey
+		formatString: dd\.MM\.yyyy
+		lineageTag: f1000008-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: calendar_date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column iso_year
+		dataType: int64
+		lineageTag: f1000008-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: iso_year
+
+	column iso_week
+		dataType: int64
+		formatString: #,##0
+		lineageTag: f1000008-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: iso_week
+
+	column year
+		dataType: int64
+		lineageTag: f1000008-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: year
+
+	column quarter
+		dataType: int64
+		formatString: #,##0
+		lineageTag: f1000008-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: quarter
+
+	column month
+		dataType: int64
+		isHidden
+		formatString: #,##0
+		lineageTag: f1000008-0000-0000-0000-000000000007
+		summarizeBy: none
+		sourceColumn: month
+
+	column month_name_ro
+		dataType: string
+		lineageTag: f1000008-0000-0000-0000-000000000008
+		summarizeBy: none
+		sourceColumn: month_name_ro
+		sortByColumn: month
+
+	column month_name_en
+		dataType: string
+		lineageTag: f1000008-0000-0000-0000-000000000009
+		summarizeBy: none
+		sourceColumn: month_name_en
+		sortByColumn: month
+
+	column day_of_month
+		dataType: int64
+		formatString: #,##0
+		lineageTag: f1000008-0000-0000-0000-00000000000a
+		summarizeBy: none
+		sourceColumn: day_of_month
+
+	column day_of_week
+		dataType: int64
+		formatString: #,##0
+		lineageTag: f1000008-0000-0000-0000-00000000000b
+		summarizeBy: none
+		sourceColumn: day_of_week
+
+	column is_weekday
+		dataType: boolean
+		lineageTag: f1000008-0000-0000-0000-00000000000c
+		summarizeBy: none
+		sourceColumn: is_weekday
+
+	column is_ro_holiday
+		dataType: boolean
+		lineageTag: f1000008-0000-0000-0000-00000000000d
+		summarizeBy: none
+		sourceColumn: is_ro_holiday
+
+	column ro_holiday_name
+		dataType: string
+		lineageTag: f1000008-0000-0000-0000-00000000000e
+		summarizeBy: none
+		sourceColumn: ro_holiday_name
+
+	column en_holiday_name
+		dataType: string
+		lineageTag: f1000008-0000-0000-0000-00000000000f
+		summarizeBy: none
+		sourceColumn: en_holiday_name
+
+	column fiscal_year
+		dataType: int64
+		isHidden
+		lineageTag: f1000008-0000-0000-0000-000000000010
+		summarizeBy: none
+		sourceColumn: fiscal_year
+
+	hierarchy Calendar
+		lineageTag: f1000008-0000-0000-0000-000000000020
+
+		level Year
+			lineageTag: f1000008-0000-0000-0000-000000000021
+			column: year
+
+		level Quarter
+			lineageTag: f1000008-0000-0000-0000-000000000022
+			column: quarter
+
+		level Month
+			lineageTag: f1000008-0000-0000-0000-000000000023
+			column: month_name_en
+
+		level Day
+			lineageTag: f1000008-0000-0000-0000-000000000024
+			column: calendar_date
+
+	partition dim_Date_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="dim_Date"]}[Data]
+				in
+					Data
+

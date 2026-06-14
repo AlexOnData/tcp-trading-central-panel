@@ -1,0 +1,170 @@
+/// Transaction-grain fact: one row per trade leg. Open positions have NULL exit/PnL (is_open = TRUE).
+/// Numeric columns are hidden; all aggregation goes through explicit measures in _Measures.
+table fact_Trades
+	lineageTag: f100000b-0000-0000-0000-000000000000
+
+	column trade_uid
+		dataType: string
+		lineageTag: f100000b-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: trade_uid
+
+	column trader_id
+		dataType: int64
+		isHidden
+		lineageTag: f100000b-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: trader_id
+
+	column account_id
+		dataType: int64
+		isHidden
+		lineageTag: f100000b-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: account_id
+
+	column market_id
+		dataType: int64
+		isHidden
+		lineageTag: f100000b-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: market_id
+
+	column session_id
+		dataType: int64
+		isHidden
+		lineageTag: f100000b-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: session_id
+
+	column order_type_id
+		dataType: int64
+		isHidden
+		lineageTag: f100000b-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: order_type_id
+
+	column side
+		dataType: string
+		lineageTag: f100000b-0000-0000-0000-000000000007
+		summarizeBy: none
+		sourceColumn: side
+
+	column quantity
+		dataType: double
+		isHidden
+		formatString: #,##0.0000
+		lineageTag: f100000b-0000-0000-0000-000000000008
+		summarizeBy: none
+		sourceColumn: quantity
+
+	column price_entry
+		dataType: double
+		isHidden
+		formatString: #,##0.000000
+		lineageTag: f100000b-0000-0000-0000-000000000009
+		summarizeBy: none
+		sourceColumn: price_entry
+
+	column price_exit
+		dataType: double
+		isHidden
+		formatString: #,##0.000000
+		lineageTag: f100000b-0000-0000-0000-00000000000a
+		summarizeBy: none
+		sourceColumn: price_exit
+
+	column time_entry
+		dataType: dateTime
+		formatString: dd\.MM\.yyyy HH:mm
+		lineageTag: f100000b-0000-0000-0000-00000000000b
+		summarizeBy: none
+		sourceColumn: time_entry
+
+	column time_exit
+		dataType: dateTime
+		formatString: dd\.MM\.yyyy HH:mm
+		lineageTag: f100000b-0000-0000-0000-00000000000c
+		summarizeBy: none
+		sourceColumn: time_exit
+
+	column gross_pnl_eur
+		dataType: double
+		isHidden
+		formatString: #,##0.00 €
+		lineageTag: f100000b-0000-0000-0000-00000000000d
+		summarizeBy: none
+		sourceColumn: gross_pnl_eur
+
+	column commission_eur
+		dataType: double
+		isHidden
+		formatString: #,##0.00 €
+		lineageTag: f100000b-0000-0000-0000-00000000000e
+		summarizeBy: none
+		sourceColumn: commission_eur
+
+	column net_pnl_eur
+		dataType: double
+		isHidden
+		formatString: #,##0.00 €
+		lineageTag: f100000b-0000-0000-0000-00000000000f
+		summarizeBy: none
+		sourceColumn: net_pnl_eur
+
+	column fx_rate_to_eur
+		dataType: double
+		isHidden
+		formatString: #,##0.00000000
+		lineageTag: f100000b-0000-0000-0000-000000000010
+		summarizeBy: none
+		sourceColumn: fx_rate_to_eur
+
+	column is_open
+		dataType: boolean
+		lineageTag: f100000b-0000-0000-0000-000000000011
+		summarizeBy: none
+		sourceColumn: is_open
+
+	column trade_date_ro
+		dataType: dateTime
+		isHidden
+		formatString: dd\.MM\.yyyy
+		lineageTag: f100000b-0000-0000-0000-000000000012
+		summarizeBy: none
+		sourceColumn: trade_date_ro
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column created_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f100000b-0000-0000-0000-000000000013
+		summarizeBy: none
+		sourceColumn: created_at
+
+	column updated_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f100000b-0000-0000-0000-000000000014
+		summarizeBy: none
+		sourceColumn: updated_at
+
+	/// Holding duration in minutes (entry to exit). BLANK for still-open positions. Computed in-model from
+	/// the timestamps so the behavioral measures (intraday rate, overnight) have a clean per-trade duration.
+	column holding_minutes = IF ( ISBLANK ( fact_Trades[time_exit] ), BLANK ( ), DATEDIFF ( fact_Trades[time_entry], fact_Trades[time_exit], MINUTE ) )
+		dataType: int64
+		isHidden
+		formatString: #,##0
+		lineageTag: f100000b-0000-0000-0000-000000000015
+		summarizeBy: none
+
+	partition fact_Trades_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="fact_Trades"]}[Data]
+				in
+					Data
+

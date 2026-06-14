@@ -1,0 +1,17 @@
+// =============================================================================
+// 06 — HTTP / Timer error rate by operation (last 24 h)
+// =============================================================================
+// Source: docs/design/03_architecture.md §12.2 query 6.
+// Workbook tile: "Operation error rate (last 24h)" — sortable table.
+// Used by SLO doc to compute SLI-1 (assistant availability) and as the
+// underlying signal for the assistant-availability burn-rate alert.
+// =============================================================================
+
+requests
+| where timestamp > ago(24h)
+| summarize
+    total = count(),
+    failed = countif(success == false)
+    by operation_Name
+| extend error_rate_pct = round(100.0 * failed / iif(total == 0, 1, total), 2)
+| order by error_rate_pct desc

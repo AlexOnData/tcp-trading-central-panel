@@ -1,0 +1,33 @@
+graph LR
+    subgraph External["External services"]
+        GithubActions["GitHub Actions (OIDC)"]
+        PowerBIService["PowerBI Service"]
+    end
+
+    subgraph Azure["Azure (rg-tcp-prod-weu)"]
+        FuncApp["Function App"]
+        TimerDaily["Timer: DailyGenerator"]
+        TimerWarmup["Timer: Warmup"]
+        TimerBacpac["Timer: BacpacExport"]
+        SQLDb["Azure SQL Database"]
+        StorageAcct["Storage Account"]
+        AppInsights["Application Insights"]
+        LogAnalytics["Log Analytics"]
+    end
+
+    GithubActions -->|azd deploy| FuncApp
+    TimerDaily -->|insert trades| SQLDb
+    TimerWarmup -->|resume| SQLDb
+    TimerBacpac -->|export| SQLDb
+    TimerBacpac -->|BACPAC blob| StorageAcct
+    FuncApp -->|traces| AppInsights
+    FuncApp -->|metrics| LogAnalytics
+    PowerBIService -->|Import refresh| SQLDb
+
+    classDef azure fill:#0078D4,stroke:#0050A0,color:#fff;
+    classDef external fill:#FFC107,stroke:#8A6D00,color:#000;
+    classDef trigger fill:#107C10,stroke:#004B1C,color:#fff;
+
+    class FuncApp,SQLDb,StorageAcct,AppInsights,LogAnalytics azure;
+    class GithubActions,PowerBIService external;
+    class TimerDaily,TimerWarmup,TimerBacpac trigger;

@@ -1,0 +1,18 @@
+%%{init: {"er": {"layoutDirection": "LR"}}}%%
+erDiagram
+
+    DIM_EMPLOYEES ||--o{ FACT_DAILYTRADERPNL : ""
+    DIM_DATE ||--o{ FACT_DAILYTRADERPNL : ""
+
+    FACT_DAILYTRADERPNL {
+        int daily_pnl_id UK
+        int employee_id PK
+        date trade_date_ro PK
+        int trade_count
+        dec gross_pnl_eur_total
+        dec net_pnl_eur_total
+        dec commission_eur_total
+        int win_count
+        int loss_count
+        dec avg_holding_minutes
+    }

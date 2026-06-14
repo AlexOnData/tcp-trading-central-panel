@@ -1,0 +1,61 @@
+%% Note: the Function App authenticates to SQL under a single DB role (tcp_ai_assistant).
+%% The "scope: trader/team_lead/floor_manager/admin" labels below describe the RLS
+%% slice enforced via SESSION_CONTEXT('aad_object_id') + dim_UserRoles; they are
+%% NOT per-request SQL roles. See 02_DB §9 and 03_arch §3.2.
+%%
+%% Note: ANTHROPIC_API_KEY is resolved as a Key Vault reference at app start and
+%% cached by the Functions runtime — no per-request KV hit. The MI→KV interaction
+%% shown below as a dashed note is for completeness.
+
+sequenceDiagram
+    actor User
+    participant Browser as Browser<br/>(SWA frontend)
+    participant SWA as Static Web App<br/>(swa-tcp-prod-weu)
+    participant FuncApp as Function App<br/>(/api/ask)
+    participant MI as Managed Identity
+    participant KV as Key Vault
+    participant SQLDb as Azure SQL DB
+    participant Anthropic as Anthropic API<br/>(claude-haiku-4-5)
+    participant AppInsights as App Insights
+
+    Note over FuncApp,KV: App startup (once):<br/>MI -> KV resolves<br/>ANTHROPIC_API_KEY<br/>(cached by Functions runtime)
+
+    User->>Browser: Type question<br/>(e.g., "Top earner<br/>on Cluj floor?")
+    Browser->>SWA: POST /api/ask<br/>with AAD session cookie
+    SWA->>SWA: Validate AAD token
+    SWA->>FuncApp: Forward request<br/>+ x-ms-client-principal header<br/>+ X-SWA-Forwarded shared secret
+    FuncApp->>FuncApp: Validate AAD claims,<br/>extract aad_object_id<br/>for SESSION_CONTEXT
+
+    alt User scope = trader
+        FuncApp->>SQLDb: SET SESSION_CONTEXT<br/>('aad_object_id', @oid)<br/>scope: trader
+    else User scope = team_lead
+        FuncApp->>SQLDb: SET SESSION_CONTEXT<br/>('aad_object_id', @oid)<br/>scope: team_lead
+    else User scope = floor_manager
+        FuncApp->>SQLDb: SET SESSION_CONTEXT<br/>('aad_object_id', @oid)<br/>scope: floor_manager
+    else User scope = admin
+        FuncApp->>SQLDb: SET SESSION_CONTEXT<br/>('aad_object_id', @oid)<br/>scope: admin
+    end
+
+    FuncApp->>Anthropic: POST messages<br/>system: SQL schema<br/>(prompt cached)<br/>user: question
+
+    alt Anthropic returns valid SQL
+        Anthropic->>FuncApp: JSON response<br/>{ sql: "SELECT ...",<br/>answer_template: "..." }
+        FuncApp->>FuncApp: Validate SQL<br/>via safe_query.py<br/>(read-only, no DDL/DML,<br/>TOP 1000)
+        FuncApp->>SQLDb: Execute validated SQL<br/>under RLS context
+
+        alt Rows returned > 0
+            SQLDb->>FuncApp: Result set<br/>(filtered by RLS)
+            FuncApp->>FuncApp: Compose final NL answer<br/>+ citation<br/>(e.g., "Source: v_floor_performance")
+            FuncApp->>Browser: Return JSON<br/>{ answer: "...",<br/>rows: [...],<br/>source: "..." }
+        else Rows returned = 0
+            SQLDb->>FuncApp: Empty result set
+            FuncApp->>Browser: Return JSON<br/>{ answer: "No data<br/>accessible for your role",<br/>rows: [] }
+        end
+    else Anthropic returns malformed SQL or refusal
+        Anthropic->>FuncApp: JSON response<br/>{ error: "...",<br/>suggestion: "..." }
+        FuncApp->>Browser: Return JSON<br/>{ error: "Could not generate<br/>valid query",<br/>suggestion: "..." }
+    end
+
+    FuncApp->>AppInsights: Log span + metrics<br/>latency_ms, input_tokens,<br/>output_tokens,<br/>cache_read_tokens
+    Browser->>User: Display table + answer
+

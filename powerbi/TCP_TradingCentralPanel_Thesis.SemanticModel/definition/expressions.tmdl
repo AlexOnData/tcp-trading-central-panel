@@ -1,0 +1,10 @@
+expression SqlServer = "sql-tcp-prod-weu.database.windows.net" meta [IsParameterQuery=true, Type=type text, IsParameterQueryRequired=true]
+	lineageTag: 4eef62b1-3f7b-4b30-a921-8f4e3f63b6c1
+
+	annotation PBI_ResultType = Text
+
+expression SqlDatabase = "sqldb-tcp-prod-weu" meta [IsParameterQuery=true, Type=type text, IsParameterQueryRequired=true]
+	lineageTag: 8dca8e9d-1eaa-4a89-9eba-baa9a6d28b9a
+
+	annotation PBI_ResultType = Text
+

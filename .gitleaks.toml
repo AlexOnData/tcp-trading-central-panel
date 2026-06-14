@@ -1,0 +1,26 @@
+title = "TCP — gitleaks config"
+
+[extend]
+useDefault = true
+
+# Project-known dev-only placeholders. The `files` array is the primary scope;
+# the `regexes` list is a redundant fallback that mutes the same literals if
+# they ever appear in a generic-string rule with high entropy.
+#
+# YourStrong!Passw0rd  — local SQL Server SA password placeholder. Documented
+#                        in db/README.md, docs/dev_setup.md, and the docker-compose default.
+# p@ssw0rd!            — illustrative password in tcp/README.md examples and a
+#                        single test assertion (tests/unit/test_db.py).
+[allowlist]
+description = "Project-known dev-only literals"
+files = [
+  "docker-compose.dev.yml",
+  "docs/dev_setup.md",
+  "db/README.md",
+  "tcp/README.md",
+  "tests/unit/test_db.py",
+]
+regexes = [
+  "YourStrong!Passw0rd",
+  "p@ssw0rd!",
+]

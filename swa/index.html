@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="TCP — Trading Central Panel: AI-assistant chat over synthetic trading data." />
+    <title>TCP — Trading Central Panel</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+
+    <header class="app-header" role="banner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">TCP</span>
+        <div class="brand-text">
+          <h1>Trading Central Panel</h1>
+          <p class="brand-subtitle">AI assistant — synthetic trading analytics</p>
+        </div>
+      </div>
+      <nav class="user-area" aria-label="User account">
+        <span
+          id="user-name"
+          class="user-name"
+          aria-live="polite"
+          aria-label="Signed-in user"
+        >Signing in&hellip;</span>
+        <a
+          id="sign-out"
+          class="btn btn-link"
+          href="/.auth/logout"
+          aria-label="Sign out of TCP Trading Central Panel"
+        >Sign out</a>
+      </nav>
+    </header>
+
+    <main id="main" class="layout" role="main">
+      <aside class="suggestions" aria-labelledby="suggestions-title">
+        <h2 id="suggestions-title">Suggested questions</h2>
+        <p class="suggestions-help">Click a question to ask it directly.</p>
+        <ul id="suggested-list" class="suggested-list" role="list">
+          <!--
+            Canonical question list derived from 01_business_requirements §6 use
+            cases (UC-04, UC-05, UC-06, UC-08, UC-10, UC-12, UC-14) and §7.1
+            in-scope category examples. Hard-coded for v1.0 — server-driven
+            suggestions are tracked as future work.
+          -->
+          <li>
+            <button type="button" class="suggested" data-question="Who was the top earner last week on the Cluj-Napoca floor?">
+              Who was the top earner last week on the Cluj-Napoca floor?
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="What is my Sharpe ratio for this month?">
+              What is my Sharpe ratio for this month?
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="Show the team-vs-team leaderboard for this month.">
+              Show the team-vs-team leaderboard for this month.
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="What is my win rate for the current month-to-date?">
+              What is my win rate for the current month-to-date?
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="Which of my traders had more than 5 consecutive losses in the last 30 days?">
+              Which of my traders had more than 5 consecutive losses in the last 30 days?
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="On which day of the week do I lose the most money on average?">
+              On which day of the week do I lose the most money on average?
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="What is the total net PnL for the București floor this month?">
+              What is the total net PnL for the București floor this month?
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="Which traders breached 8% max drawdown this month?">
+              Which traders breached 8% max drawdown this month?
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="Which instrument lost me the most money this quarter?">
+              Which instrument lost me the most money this quarter?
+            </button>
+          </li>
+          <li>
+            <button type="button" class="suggested" data-question="Is my team's PnL variance higher or lower than the floor average?">
+              Is my team's PnL variance higher or lower than the floor average?
+            </button>
+          </li>
+        </ul>
+      </aside>
+
+      <section class="chat" aria-labelledby="chat-title">
+        <h2 id="chat-title" class="visually-hidden">Chat transcript</h2>
+
+        <div
+          id="transcript"
+          class="transcript"
+          role="log"
+          aria-live="polite"
+          aria-atomic="false"
+          aria-relevant="additions"
+        >
+          <div class="message bot welcome">
+            <p>
+              Welcome. Ask a question about trading activity recorded in the
+              TCP dataset, or pick one from the suggestions panel.
+            </p>
+            <p class="hint">
+              Tip: click <strong>Wake up the database</strong> before your
+              first question to skip the cold-start delay.
+            </p>
+          </div>
+        </div>
+
+        <form id="ask-form" class="ask-form" autocomplete="off" novalidate>
+          <div class="ask-row">
+            <label for="question" class="visually-hidden">Your question</label>
+            <input
+              type="text"
+              id="question"
+              name="question"
+              class="ask-input"
+              placeholder="Ask a question about the trading data&hellip;"
+              maxlength="500"
+              required
+              aria-required="true"
+              aria-describedby="question-help"
+            />
+            <button
+              type="submit"
+              id="ask-button"
+              class="btn btn-primary"
+              aria-label="Send question"
+            >Ask</button>
+          </div>
+          <div class="ask-row secondary">
+            <button
+              type="button"
+              id="wake-button"
+              class="btn btn-secondary"
+              aria-label="Wake up the database to avoid cold-start latency"
+            >Wake up the database</button>
+            <p id="question-help" class="ask-help">
+              Press Enter to send. Up to 500 characters.
+            </p>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <footer class="app-footer" role="contentinfo">
+      <p>Synthetic data — TCP Capital Management SRL — Thesis project</p>
+    </footer>
+
+    <div
+      id="toast"
+      class="toast"
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+      hidden
+    >
+      <span id="toast-message" class="toast-message"></span>
+      <button
+        type="button"
+        id="toast-close"
+        class="toast-close"
+        aria-label="Dismiss notification"
+      >&times;</button>
+    </div>
+  </body>
+</html>

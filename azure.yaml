@@ -1,0 +1,45 @@
+# azd project file for TCP — Trading Central Panel.
+# Reference: https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema
+name: tcp-trading-central-panel
+metadata:
+  # Informational template marker; not consumed by azd at runtime.
+  template: tcp@0.1.0
+
+# Two services: the Python Function App (`api`) and the Static Web App
+# frontend (`web`). The SWA is also provisioned by Bicep
+# (`infra/modules/swa.bicep`); its static content lives in `./swa/` and is
+# uploaded by `azd deploy web` via the SWA deployment token resolved from
+# Bicep outputs. There is no build step (vanilla HTML/JS).
+services:
+  api:
+    project: ./function_app
+    language: python
+    host: function
+  web:
+    project: ./swa
+    language: js
+    host: staticwebapp
+
+hooks:
+  # Post-provision orchestration is owned by the deployment-engineer agent in
+  # `infra/scripts/postprovision.{ps1,sh}`. The script flips the SQL server to
+  # AAD-only auth, deletes the bootstrap SQL admin secret, registers the
+  # Function App MI as an admin in `dim_UserRoles`, and writes the resolved
+  # `FUNCTION_APP_PRINCIPAL_ID` back into the Function App's `TCP_GENERATOR_OID`
+  # setting. Stub-only here — implemented in a parallel work-stream.
+  postprovision:
+    windows:
+      shell: pwsh
+      run: ./infra/scripts/postprovision.ps1
+      continueOnError: false
+      interactive: false
+    posix:
+      shell: sh
+      run: ./infra/scripts/postprovision.sh
+      continueOnError: false
+      interactive: false
+
+infra:
+  provider: bicep
+  path: ./infra
+  module: main

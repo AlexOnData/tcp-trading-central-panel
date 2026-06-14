@@ -1,0 +1,94 @@
+# =============================================================================
+# Local pre-commit hooks for TCP — Trading Central Panel.
+#
+# Closes the Etapa-9 residual (README §"Hooks" promised a pre-commit baseline
+# for Etapa 12 polish; pulled forward into Etapa 11 alongside the dependency
+# audit). Runs the same `ruff` + `sqlfluff` gates as CI so a `git commit` on
+# a developer workstation fails fast instead of the contributor finding out
+# after pushing.
+#
+# Install (one-time, per clone):
+#   pipx install pre-commit && pre-commit install
+#   # or, if you already have a uv venv active:
+#   uv run pre-commit install
+#
+# Run on the full tree (one-time after install, then on every commit):
+#   uv run pre-commit run --all-files
+#
+# The hooks operate on the working tree, not the staged index — so a
+# `git add -p` partial commit still gets the formatter applied to staged
+# chunks. The fail-fast posture matches the project's no-bypass commit policy.
+# =============================================================================
+
+default_language_version:
+  python: python3.12
+
+repos:
+  # Astral / ruff — single rule chain, replaces black + isort + most of flake8.
+  # Pinned to a recent stable; the project's `pyproject.toml [tool.ruff]` is the
+  # source of truth for the rule set.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff-format
+      - id: ruff
+        # Use the fixer (`--fix`) so trivial issues (imports, unused vars) are
+        # repaired in place. Non-fixable findings still abort the commit.
+        args: [--fix, --exit-non-zero-on-fix]
+
+  # sqlfluff — same dialect (tsql) + same config (.sqlfluff) as CI.
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 3.4.2
+    hooks:
+      - id: sqlfluff-lint
+        files: ^(db/|tests/sql/).*\.sql$
+        args: [--dialect, tsql]
+
+  # Sanity: trim trailing whitespace, ensure file ends with a newline.
+  # These are stdlib-style hygiene hooks — the CI grep for placeholder
+  # leakage in `cd.yml` already rejects an unsubstituted `__V<n>_CHECKSUM__`,
+  # so we don't need a custom regex hook here.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(.*\.bicep|.*\.json)$
+      - id: end-of-file-fixer
+        exclude: ^(.*\.json)$
+      - id: check-merge-conflict
+      - id: check-yaml
+        # azure.yaml has its own schema; pre-commit-hooks check-yaml understands
+        # standard YAML so this is a sanity gate for typos.
+      - id: check-toml
+      - id: check-added-large-files
+        # 2 MB matches the source-artefact baseline (the Excel + .pbix file sizes).
+        args: [--maxkb=2048]
+
+  # gitleaks — same scanner as CI's secret-scan job; mirror locally so a
+  # mis-staged secret is caught before push.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  # Local guard for the SWA-config substitution footgun (Etapa-11 close of
+  # arch10-MJ-03 ACCEPTED RESIDUAL). The postprovision scripts modify
+  # `swa/staticwebapp.config.json` in place during `azd up`, replacing the
+  # `<value-set-by-postprovision>` placeholder with the real SWA forwarded
+  # secret. A developer who runs `azd up` locally and then immediately
+  # `git commit -a`s would commit that secret. The hook below reads the
+  # **staged blob** via `git show :<path>` so the stage-then-restore
+  # evasion path (working tree shows clean placeholder, index has the
+  # substituted file) is closed (Etapa-11 convergence: code11-MJ-01 +
+  # sec11-MN-01). Full source in `scripts/check_swa_placeholder.py`.
+  - repo: local
+    hooks:
+      - id: swa-config-placeholder-guard
+        name: SWA config placeholder still literal in staged blob
+        entry: python scripts/check_swa_placeholder.py
+        language: system
+        files: ^swa/staticwebapp\.config\.json$
+        pass_filenames: false
+
+# Skip these hooks on transient tooling artefacts.
+exclude: ^\.tmp_install/$

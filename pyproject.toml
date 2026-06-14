@@ -1,0 +1,170 @@
+[project]
+name = "tcp"
+version = "0.1.0"
+description = "TCP — Trading Central Panel: employee performance analytics for a Romanian boutique trading firm."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary — academic use only" }
+authors = [{ name = "TODO author name" }]
+
+dependencies = [
+  "pyodbc>=5.1",
+  "azure-identity>=1.17",
+  "pydantic>=2.7",
+  "polars>=1.0",
+  "structlog>=24.1",
+  # Faker promoted from an optional extra to a runtime dependency in Etapa 3:
+  # `tcp.synth.seed_employees` requires it for the ro_RO locale at deploy time.
+  "faker>=26.0",
+  # httpx powers the Etapa 5 BACPAC export REST calls (ADR-004); kept in the
+  # main deps so unit tests under `uv` resolve the same version as the
+  # Function App runtime declared in function_app/requirements.txt.
+  "httpx>=0.27",
+  # Etapa 5 — AI assistant:
+  # `anthropic` is the official SDK for the Claude API used by
+  # `HttpTrigger_AskAssistant`; `sqlglot` is the T-SQL parser that
+  # drives `tcp.safe_query` (the LLM-output validator).
+  "anthropic>=0.40",
+  "sqlglot>=23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+  "pytest-cov>=5.0",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  # Etapa-11 dependency audit: `types-pyodbc` was removed because the package
+  # never existed on PyPI (the line was a leftover from an Etapa-2 draft that
+  # assumed a Microsoft stubs package). pyodbc 5.x now ships an inline
+  # `pyodbc.pyi` next to its native module but does not carry a PEP 561
+  # `py.typed` marker, so mypy still cannot import it cleanly. The mypy
+  # overrides block below adds `ignore_missing_imports = true` for the
+  # `pyodbc.*` module to close the gap until upstream PEP 561-marks the
+  # package (a single line revert when that happens).
+  # Etapa-12 cleanup (closes code11-MN-02): `freezegun` was removed after a
+  # `grep -r freezegun` confirmed no test or runtime module imported it. The
+  # project's preferred idiom for time-sensitive tests is environment-variable
+  # seeding (see `tests/conftest.py` `TCP_SYNTH_SEED_OFFSET` autouse fixture)
+  # plus explicit `date` overrides on the public API, not `freezegun`.
+  #
+  # Pinned to the 3.x line: rule codes diverged between 1.x (L016/L036) and
+  # 3.x (LT05/LT02) and the .sqlfluff config targets the 3.x names. Etapa 11
+  # spot-check confirmed 4.x renames a handful of rules again; the upper cap
+  # stays in place pending a focused rule-set audit.
+  "sqlfluff>=3.0,<4",
+  "bandit>=1.7",
+  "pip-audit>=2.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", ".tmp_install", "build", "dist", "thesis"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "UP", "D", "ANN", "PL", "RUF", "S"]
+ignore = [
+  "D203",  # one-blank-line-before-class
+  "D213",  # multi-line-summary-second-line
+  "PLR0913",  # too-many-arguments — accept for db helpers
+  "S608",  # parameterised SQL false positive; safe_query.py handles allowlisting
+]
+[tool.ruff.lint.per-file-ignores]
+# Tests can skip docstrings (D), annotations (ANN), bare asserts (S101),
+# magic-value comparisons (PLR2004 — HTTP status codes, row counts), in-
+# function imports (PLC0415 — module-level imports would side-effect the
+# Function App), and false-positive hardcoded-password flags (S105 — the
+# constants here are header / env-var names, not secrets).
+"tests/**" = ["D", "ANN", "S101", "PLR2004", "PLC0415", "S105"]
+# tcp/ai/prompts.py holds the long-form, prompt-cached system prompt as
+# a single Final[str]. Re-wrapping the few-shot SQL examples below 100
+# columns would split T-SQL identifiers and reduce readability for no
+# wire-format benefit (Anthropic counts tokens, not lines).
+"tcp/ai/prompts.py" = ["E501"]
+# function_app/triggers/ask.py is the dispatcher for /api/ask: it
+# legitimately produces many return statements (one per HTTP status path)
+# and reads untrusted JSON via `dict[str, Any]`. The structure is more
+# readable as a flat ladder than refactored into a thicket of helpers.
+"function_app/triggers/ask.py" = ["PLR0911", "PLR0912", "PLR0915", "ANN401", "S105"]
+# tcp/safe_query.py — the validator core is a long, branchy function on
+# purpose: every branch represents a precise rejection reason in the
+# Etapa 5 §6.4 contract, and splitting it further would obscure the
+# audit trail. The ``∪`` mathematical-union character in the docstring
+# is intentional (set-notation in the API contract).
+"tcp/safe_query.py" = ["PLR0912", "PLR0915", "RUF002"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_unused_ignores = true
+disallow_any_generics = true
+exclude = [".tmp_install", "build", "dist", "thesis", ".venv"]
+# Etapa-11 fix for code10-MN-01: `function_app/triggers/__init__.py` is a
+# package directory, and the Azure Functions Python v2 runtime requires
+# `function_app.py` (the FunctionApp instance) to live at the repo's
+# `function_app/` directory — which means there is no `function_app/__init__.py`
+# (the runtime would mis-detect the package boundary). Without
+# `explicit_package_bases`, mypy resolves `function_app/triggers/ask.py` to
+# both `triggers.ask` (top-level scan) and `function_app.triggers.ask`
+# (nested scan), and rejects with "Source file found twice under different
+# module names". The pair `explicit_package_bases = true` + the `mypy_path`
+# entry below tells mypy to treat the repo root as the import base and
+# resolve `function_app.triggers.ask` as the canonical name.
+explicit_package_bases = true
+mypy_path = ["."]
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+# Etapa-11 dependency audit (former finding: pyodbc was claimed to be typed
+# via `types-pyodbc`, which never existed on PyPI). pyodbc 5.x ships an
+# inline `pyodbc.pyi` next to the native module but no PEP 561 marker, so
+# mypy reports `import-not-found`. polars is a transitive dep without
+# bundled stubs. Both get the relaxation; remove either entry the moment
+# upstream publishes a `py.typed` package.
+module = ["polars.*", "pyodbc", "pyodbc.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Etapa-11 relaxation for the test suite — tightened in convergence (code11-MJ-02).
+#
+# Pytest fixtures and helpers commonly omit return annotations
+# (`no-untyped-def`) and mock returns produce intentional `Any` values
+# (`no-any-return`). Both are acceptable in tests because the actual contract
+# under test is runtime behaviour, not static types.
+#
+# `attr-defined`, `operator`, and `unused-ignore` are NOT disabled — those
+# can hide real bugs:
+#   - `attr-defined` would silently miss a renamed `monkeypatch.setattr`
+#     target (e.g., `_resolve_scope` renamed in ask.py),
+#   - `operator` would mask a `None`-arithmetic regression,
+#   - `unused-ignore` flags ignores that no longer apply (dead code).
+# The two surviving codes are the smallest possible relaxation that lets
+# fixtures stay terse. Specific monkey-patch sites that still need
+# `attr-defined` carry their own targeted `# type: ignore[attr-defined]`
+# comment with a rationale.
+module = ["tests.*"]
+disable_error_code = [
+  "no-untyped-def",  # fixtures + helpers commonly omit return annotations
+  "no-any-return",   # explicit `Any` in mock returns is intentional
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra -q --strict-markers --strict-config"
+markers = [
+  "integration: requires a live SQL Server connection (skipped in unit-only CI runs)",
+]

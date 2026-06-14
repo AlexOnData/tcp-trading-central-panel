@@ -1,0 +1,24 @@
+# Function App runtime dependencies — pinned via lower bound.
+#
+# This file co-exists with the repo-root ``pyproject.toml`` on purpose:
+# Azure Functions' Oryx-based Python build pipeline reads ``requirements.txt``
+# only — it does not honour ``pyproject.toml`` / PEP 621 metadata. The rest of
+# the project (tests, ruff, mypy, local dev) uses ``uv`` against
+# ``pyproject.toml``. Keep the two files in sync when bumping a dependency.
+#
+# Listed packages cover the five triggers' direct imports plus the ``tcp``
+# package the Function App reuses (synth runner, db connection layer).
+
+azure-functions>=1.21
+azure-identity>=1.17
+pyodbc>=5.1
+pydantic>=2.7
+structlog>=24.1
+faker>=26.0
+httpx>=0.27
+# Etapa 5 — AI assistant body (HttpTrigger_AskAssistant):
+# anthropic SDK for the Claude API + sqlglot for the LLM-output SQL
+# validator (tcp.safe_query). Pinned with the same lower bounds as
+# pyproject.toml.
+anthropic>=0.40
+sqlglot>=23.0

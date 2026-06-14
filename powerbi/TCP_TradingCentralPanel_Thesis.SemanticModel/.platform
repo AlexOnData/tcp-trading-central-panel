@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "TCP_TradingCentralPanel"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "ad267744-f21e-4136-9d56-dc0b4593d44e"
+  }
+}

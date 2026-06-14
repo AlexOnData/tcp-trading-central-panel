@@ -1,0 +1,75 @@
+table dim_Accounts
+	lineageTag: f1000007-0000-0000-0000-000000000000
+
+	column account_id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: f1000007-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: account_id
+
+	column trader_id
+		dataType: int64
+		isHidden
+		lineageTag: f1000007-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: trader_id
+
+	column account_code
+		dataType: string
+		lineageTag: f1000007-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: account_code
+
+	column account_type
+		dataType: string
+		lineageTag: f1000007-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: account_type
+
+	column currency
+		dataType: string
+		lineageTag: f1000007-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: currency
+
+	column opened_on
+		dataType: dateTime
+		isHidden
+		formatString: dd\.MM\.yyyy
+		lineageTag: f1000007-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: opened_on
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column is_active
+		dataType: boolean
+		lineageTag: f1000007-0000-0000-0000-000000000007
+		summarizeBy: none
+		sourceColumn: is_active
+
+	column created_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000007-0000-0000-0000-000000000008
+		summarizeBy: none
+		sourceColumn: created_at
+
+	column updated_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000007-0000-0000-0000-000000000009
+		summarizeBy: none
+		sourceColumn: updated_at
+
+	partition dim_Accounts_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="dim_Accounts"]}[Data]
+				in
+					Data
+

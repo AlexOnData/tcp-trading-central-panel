@@ -1,0 +1,58 @@
+flowchart TD
+    Start(["NCRONTAB fires<br/>07:00 Europe/Bucharest<br/>Mon-Fri<br/>(via WEBSITE_TIME_ZONE=<br/>E. Europe Standard Time)"])
+
+    WarmupNote["WarmupTrigger already ran<br/>at 06:55 RO — SQL DB<br/>now resumed from auto-pause"]
+
+    CheckDay{{"Is today Monday?"}}
+
+    TargetFriday["target_date =<br/>previous Friday"]
+    TargetPrevious["target_date =<br/>previous business day<br/>via fn_PreviousBusinessDay"]
+
+    CallProc["Function App calls<br/>EXEC usp_GenerateDailyTrades<br/>@trade_date = target_date"]
+
+    ProcLogic["Inside usp_GenerateDailyTrades:<br/>1. Check @trade_date is valid<br/>2. Call fn_IsTradingDay<br/>(combined weekend + RO holiday check)<br/>3. Check no trades exist<br/>for that date"]
+
+    LoadTraders["Load active traders<br/>FROM dim_Employees<br/>WHERE role='trader'<br/>AND is_active=1"]
+
+    GenerateSynth["For each trader:<br/>Generate ~10 trades<br/>Faker(ro_RO)<br/>deterministic seed per date<br/>Build trade_uid<br/>T&lt;YYYYMMDD&gt;-&lt;NNNN&gt;"]
+
+    InsertFacts["INSERT INTO fact_Trades<br/>~150-250 rows total<br/>Single transaction<br/>Idempotent on trade_uid"]
+
+    CheckInsert{{"Rowcount > 0?"}}
+
+    Success["Commit transaction<br/>Log to App Insights:<br/>tcp.generator.rows_inserted<br/>tcp.generator.duration_ms<br/>tcp.sql.resume_ms"]
+
+    Failure["Rollback transaction<br/>RAISERROR in App Insights<br/>Alert: DailyGeneratorFailed"]
+
+    Later["(30 min later)<br/>PowerBI Scheduled Refresh<br/>fires at 07:30 RO"]
+
+    End(["Daily cycle complete"])
+
+    Start --> WarmupNote
+    WarmupNote --> CheckDay
+    CheckDay -->|Yes| TargetFriday
+    CheckDay -->|No| TargetPrevious
+    TargetFriday --> CallProc
+    TargetPrevious --> CallProc
+    CallProc --> ProcLogic
+    ProcLogic --> LoadTraders
+    LoadTraders --> GenerateSynth
+    GenerateSynth --> InsertFacts
+    InsertFacts --> CheckInsert
+    CheckInsert -->|Yes| Success
+    CheckInsert -->|No| Failure
+    Success --> Later
+    Later --> End
+    Failure --> End
+
+    classDef timer fill:#FFC107,stroke:#8A6D00,color:#000;
+    classDef database fill:#0078D4,stroke:#0050A0,color:#fff;
+    classDef success fill:#107C10,stroke:#004B1C,color:#fff;
+    classDef failure fill:#DA3B01,stroke:#8B0000,color:#fff;
+    classDef logic fill:#605E5C,stroke:#3B3A39,color:#fff;
+
+    class Start,WarmupNote timer;
+    class CallProc,ProcLogic,LoadTraders,GenerateSynth,InsertFacts,Later database;
+    class Success success;
+    class Failure failure;
+    class CheckDay,CheckInsert logic;

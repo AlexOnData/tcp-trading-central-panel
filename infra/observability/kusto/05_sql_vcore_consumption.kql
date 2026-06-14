@@ -1,0 +1,32 @@
+// =============================================================================
+// 05 — Azure SQL Free Offer vCore-second consumption vs monthly quota
+// =============================================================================
+// Source: docs/design/03_architecture.md §12.2 query 5.
+// Workbook tile: "SQL vCore-second budget burn".
+// SLO indirect: an exhausted Free-Offer budget pauses the database for the rest
+//   of the month, breaching SLI-1 (assistant availability) and SLI-2 (generator
+//   success). Alert anchor: alerts.bicep "tcp-alert-sql-quota-burn" (≥ 80 %).
+//
+// Free-Offer monthly grant (per docs/design/03_architecture.md §4.2):
+//   100 000 vCore-seconds / calendar month (resets at start-of-month UTC).
+// =============================================================================
+
+// obs-MI-04 fix: use `partition by Resource (...)` so cumulative sums are
+// computed independently per database. The previous `prev(Resource) != Resource`
+// guard relied on a strict Resource-then-Time ordering which `order by
+// TimeGenerated asc` broke under multi-DB scenarios (restore-drill DB, etc.).
+let monthly_quota_vcore_seconds = 100000.0;
+AzureMetrics
+| where ResourceProvider == "MICROSOFT.SQL"
+| where MetricName == "app_cpu_billed"
+| where TimeGenerated > startofmonth(now())
+| summarize used_vcore_seconds = sum(Total) by bin(TimeGenerated, 1d), Resource
+| partition by Resource (
+    sort by TimeGenerated asc
+    | extend
+        cumulative_used = row_cumsum(used_vcore_seconds)
+  )
+| extend
+    quota_remaining = monthly_quota_vcore_seconds - cumulative_used,
+    pct_used = round(100.0 * cumulative_used / monthly_quota_vcore_seconds, 2)
+| project TimeGenerated, Resource, used_vcore_seconds, cumulative_used, quota_remaining, pct_used

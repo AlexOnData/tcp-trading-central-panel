@@ -1,0 +1,44 @@
+relationship fact_Trades_date
+	fromColumn: fact_Trades.trade_date_ro
+	toColumn: dim_Date.calendar_date
+
+relationship fact_Trades_trader
+	fromColumn: fact_Trades.trader_id
+	toColumn: dim_Employees.employee_id
+
+relationship fact_Trades_account
+	fromColumn: fact_Trades.account_id
+	toColumn: dim_Accounts.account_id
+
+relationship fact_Trades_market
+	fromColumn: fact_Trades.market_id
+	toColumn: dim_Markets.market_id
+
+relationship fact_Trades_session
+	fromColumn: fact_Trades.session_id
+	toColumn: dim_Sessions.session_id
+
+relationship fact_Trades_ordertype
+	fromColumn: fact_Trades.order_type_id
+	toColumn: dim_OrderType.order_type_id
+
+relationship fact_DailyTraderPnL_date
+	fromColumn: fact_DailyTraderPnL.trade_date_ro
+	toColumn: dim_Date.calendar_date
+
+relationship fact_DailyTraderPnL_employee
+	fromColumn: fact_DailyTraderPnL.employee_id
+	toColumn: dim_Employees.employee_id
+
+relationship dim_Employees_team
+	fromColumn: dim_Employees.team_id
+	toColumn: dim_Teams.team_id
+
+relationship dim_Teams_floor
+	fromColumn: dim_Teams.floor_id
+	toColumn: dim_TradingFloors.floor_id
+
+relationship dim_TradingFloors_company
+	fromColumn: dim_TradingFloors.company_id
+	toColumn: dim_Companies.company_id
+

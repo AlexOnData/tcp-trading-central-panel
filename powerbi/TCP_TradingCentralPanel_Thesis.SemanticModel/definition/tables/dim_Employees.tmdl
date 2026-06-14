@@ -1,0 +1,117 @@
+table dim_Employees
+	lineageTag: f1000009-0000-0000-0000-000000000000
+
+	column employee_id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: f1000009-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: employee_id
+
+	column company_id
+		dataType: int64
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: company_id
+
+	column floor_id
+		dataType: int64
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: floor_id
+
+	column team_id
+		dataType: int64
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: team_id
+
+	column manager_employee_id
+		dataType: int64
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: manager_employee_id
+
+	column first_name
+		dataType: string
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: first_name
+
+	column last_name
+		dataType: string
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-000000000007
+		summarizeBy: none
+		sourceColumn: last_name
+
+	column email
+		dataType: string
+		lineageTag: f1000009-0000-0000-0000-000000000008
+		summarizeBy: none
+		sourceColumn: email
+
+	column employee_role
+		dataType: string
+		lineageTag: f1000009-0000-0000-0000-000000000009
+		summarizeBy: none
+		sourceColumn: employee_role
+
+	column hire_date
+		dataType: dateTime
+		formatString: dd\.MM\.yyyy
+		lineageTag: f1000009-0000-0000-0000-00000000000a
+		summarizeBy: none
+		sourceColumn: hire_date
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column is_active
+		dataType: boolean
+		lineageTag: f1000009-0000-0000-0000-00000000000b
+		summarizeBy: none
+		sourceColumn: is_active
+
+	column aad_object_id
+		dataType: string
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-00000000000c
+		summarizeBy: none
+		sourceColumn: aad_object_id
+
+	column created_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-00000000000d
+		summarizeBy: none
+		sourceColumn: created_at
+
+	column updated_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000009-0000-0000-0000-00000000000e
+		summarizeBy: none
+		sourceColumn: updated_at
+
+	/// Display label "First Last" for slicers and visuals bound to dim_Employees, so email is never exposed.
+	/// Computed in the model (no SQL change); mirrors the trader name produced at the SQL layer.
+	column full_name = dim_Employees[first_name] & " " & dim_Employees[last_name]
+		dataType: string
+		lineageTag: f1000009-0000-0000-0000-00000000000f
+		summarizeBy: none
+
+	partition dim_Employees_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="dim_Employees"]}[Data]
+				in
+					Data
+

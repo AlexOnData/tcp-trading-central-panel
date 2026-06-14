@@ -1,0 +1,379 @@
+/// Measures-only table. Single source of truth for every KPI. One measure per concept: trader / team /
+/// floor / company results come from filter context (org snowflake), not duplicated measures.
+/// PnL & counts come from fact_Trades (responds to every dimension). Daily-series risk metrics come from
+/// fact_DailyTraderPnL (the periodic snapshot at trader-day grain). Both reconcile on totals.
+table _Measures
+	lineageTag: f100000d-0000-0000-0000-000000000000
+
+	/// KPI-TR-001 — Number of trades executed in the current filter context (open and closed).
+	measure 'Total Trades' = COUNTROWS ( fact_Trades )
+		formatString: #,##0
+		displayFolder: Volume
+		lineageTag: f100000d-0001-0000-0000-000000000000
+
+	/// Closed trades only. Denominator for win rate, profit factor and the behavioral ratios.
+	measure 'Closed Trades' = CALCULATE ( COUNTROWS ( fact_Trades ), fact_Trades[is_open] = FALSE () )
+		formatString: #,##0
+		displayFolder: Volume
+		lineageTag: f100000d-0002-0000-0000-000000000000
+
+	/// KPI-TR-003 — Distinct trading days with activity in context.
+	measure 'Active Trading Days' = DISTINCTCOUNT ( fact_DailyTraderPnL[trade_date_ro] )
+		formatString: #,##0
+		displayFolder: Volume
+		lineageTag: f100000d-0003-0000-0000-000000000000
+
+	/// KPI-TR-002 — Mean number of trades per active trading day.
+	measure 'Avg Daily Trades per Trader' = DIVIDE ( [Total Trades], [Active Trading Days] )
+		formatString: #,##0.0
+		displayFolder: Volume
+		lineageTag: f100000d-0004-0000-0000-000000000000
+
+	/// KPI-TR-004 — Share of trading staff who traded in context, over all active trader/team-lead headcount.
+	measure 'Active Trader Ratio' = DIVIDE ( DISTINCTCOUNT ( fact_DailyTraderPnL[employee_id] ), CALCULATE ( DISTINCTCOUNT ( dim_Employees[employee_id] ), dim_Employees[employee_role] IN { "trader", "team_lead" }, dim_Employees[is_active] = TRUE () ) )
+		formatString: 0.0%
+		displayFolder: Volume
+		lineageTag: f100000d-0005-0000-0000-000000000000
+
+	/// KPI-TR-005 — Distinct instruments traded in context.
+	measure Instruments = DISTINCTCOUNT ( fact_Trades[market_id] )
+		formatString: #,##0
+		displayFolder: Volume
+		lineageTag: f100000d-0006-0000-0000-000000000000
+
+	/// KPI-TR-011 — Realized net PnL (after commission) over closed trades. Primary PnL measure; responds to
+	/// every dimension (date, employee, market, session, side). Rolls up to team/floor/company via context.
+	measure 'Net PnL' = CALCULATE ( SUM ( fact_Trades[net_pnl_eur] ), fact_Trades[is_open] = FALSE () )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0010-0000-0000-000000000000
+
+	/// KPI-TR-010 — Realized gross PnL (before commission) over closed trades.
+	measure 'Gross PnL' = CALCULATE ( SUM ( fact_Trades[gross_pnl_eur] ), fact_Trades[is_open] = FALSE () )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0011-0000-0000-000000000000
+
+	/// KPI-TR-009 — Total commission paid in context.
+	measure Commission = SUM ( fact_Trades[commission_eur] )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0012-0000-0000-000000000000
+
+	/// KPI-TR-019 — Mean net PnL per closed trade.
+	measure 'Avg PnL per Trade' = DIVIDE ( [Net PnL], [Closed Trades] )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0013-0000-0000-000000000000
+
+	/// KPI-TR-013 — Net PnL on the latest date in the current selection.
+	measure 'Daily Net PnL' = VAR d = MAX ( fact_Trades[trade_date_ro] ) RETURN CALCULATE ( [Net PnL], dim_Date[calendar_date] = d )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0014-0000-0000-000000000000
+
+	/// KPI-TR-014 — Net PnL over the Mon-Fri week containing the latest selected date.
+	measure 'Weekly Net PnL' = VAR d = MAX ( fact_Trades[trade_date_ro] ) VAR ws = d - WEEKDAY ( d, 2 ) + 1 RETURN CALCULATE ( [Net PnL], DATESBETWEEN ( dim_Date[calendar_date], ws, ws + 4 ) )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0015-0000-0000-000000000000
+
+	/// KPI-TR-015 — Net PnL over the full calendar month of the latest selected date.
+	measure 'Monthly Net PnL' = VAR d = MAX ( fact_Trades[trade_date_ro] ) RETURN CALCULATE ( [Net PnL], DATESBETWEEN ( dim_Date[calendar_date], DATE ( YEAR ( d ), MONTH ( d ), 1 ), EOMONTH ( d, 0 ) ) )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0016-0000-0000-000000000000
+
+	/// KPI-TR-016 — Month-to-date net PnL up to the latest selected date.
+	measure 'MTD Net PnL' = VAR d = MAX ( fact_Trades[trade_date_ro] ) RETURN CALCULATE ( [Net PnL], DATESBETWEEN ( dim_Date[calendar_date], DATE ( YEAR ( d ), MONTH ( d ), 1 ), d ) )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0017-0000-0000-000000000000
+
+	/// KPI-TR-017 — Year-to-date net PnL up to the latest selected date.
+	measure 'YTD Net PnL' = VAR d = MAX ( fact_Trades[trade_date_ro] ) RETURN CALCULATE ( [Net PnL], DATESBETWEEN ( dim_Date[calendar_date], DATE ( YEAR ( d ), 1, 1 ), d ) )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0018-0000-0000-000000000000
+
+	/// KPI-TR-018 — Running cumulative net PnL up to the date in context. Drives the equity-curve visual.
+	measure 'Cumulative Net PnL' = CALCULATE ( [Net PnL], FILTER ( ALL ( dim_Date[calendar_date] ), dim_Date[calendar_date] <= MAX ( dim_Date[calendar_date] ) ) )
+		formatString: #,##0.00 €
+		displayFolder: PnL
+		lineageTag: f100000d-0019-0000-0000-000000000000
+
+	/// Total capital baseline for the trading staff in context: headcount (traders + team leads) times the
+	/// effective global baseline read from config_Capital. Scales with the level, so ROC works everywhere.
+	measure 'Capital Baseline' =
+			VAR GlobalBaseline = CALCULATE ( MAX ( config_Capital[amount_eur] ), FILTER ( ALL ( config_Capital ), ISBLANK ( config_Capital[trader_id] ) ) )
+			VAR Headcount = CALCULATE ( DISTINCTCOUNT ( dim_Employees[employee_id] ), dim_Employees[employee_role] IN { "trader", "team_lead" } )
+			RETURN Headcount * GlobalBaseline
+		formatString: #,##0.00 €
+		displayFolder: Performance vs Capital
+		lineageTag: f100000d-0020-0000-0000-000000000000
+
+	/// KPI-TR-020 — Net PnL as a percentage of capital baseline (any level).
+	measure 'Return on Capital' = DIVIDE ( [Net PnL], [Capital Baseline] )
+		formatString: 0.00%
+		displayFolder: Performance vs Capital
+		lineageTag: f100000d-0021-0000-0000-000000000000
+
+	/// KPI-TR-021 — ROC extrapolated to an annual basis (252 trading days).
+	measure 'Annualized Return' = IF ( [Active Trading Days] > 0, [Return on Capital] * DIVIDE ( 252, [Active Trading Days] ), BLANK () )
+		formatString: 0.00%
+		displayFolder: Performance vs Capital
+		lineageTag: f100000d-0022-0000-0000-000000000000
+
+	/// KPI-TR-022 — Mean notional position value relative to capital baseline.
+	measure 'Capital Utilization Ratio' = DIVIDE ( AVERAGEX ( fact_Trades, fact_Trades[price_entry] * fact_Trades[quantity] ), [Capital Baseline] )
+		formatString: 0.00
+		displayFolder: Performance vs Capital
+		lineageTag: f100000d-0023-0000-0000-000000000000
+
+	/// KPI-TR-023 — Net PnL earned per 1,000 EUR of capital. Normalised cross-trader comparator.
+	measure 'EUR per 1000 Capital' = DIVIDE ( [Net PnL], DIVIDE ( [Capital Baseline], 1000 ) )
+		formatString: #,##0.00 €
+		displayFolder: Performance vs Capital
+		lineageTag: f100000d-0024-0000-0000-000000000000
+
+	/// Daily realized net PnL from the snapshot fact. Hidden helper; basis for the daily-series risk metrics.
+	measure '_Daily Net PnL' = SUM ( fact_DailyTraderPnL[net_pnl_eur_total] )
+		formatString: #,##0.00 €
+		isHidden
+		displayFolder: Risk
+		lineageTag: f100000d-0030-0000-0000-000000000000
+
+	/// KPI-TR-032 — Standard deviation of daily net PnL over active trading days.
+	measure 'Daily PnL Volatility' = STDEVX.S ( CALCULATETABLE ( VALUES ( dim_Date[calendar_date] ), fact_DailyTraderPnL ), [_Daily Net PnL] )
+		formatString: #,##0.00 €
+		displayFolder: Risk
+		lineageTag: f100000d-0031-0000-0000-000000000000
+
+	/// KPI-TR-030 — Largest peak-to-trough decline of cumulative net PnL over active days (EUR).
+	measure 'Max Drawdown EUR' =
+			VAR Days = CALCULATETABLE ( VALUES ( dim_Date[calendar_date] ), fact_DailyTraderPnL )
+			VAR Cumulative =
+				ADDCOLUMNS (
+					Days,
+					"@Cumul", CALCULATE ( [_Daily Net PnL], FILTER ( ALL ( dim_Date[calendar_date] ), dim_Date[calendar_date] <= EARLIER ( dim_Date[calendar_date] ) ) )
+				)
+			VAR WithDD =
+				ADDCOLUMNS (
+					Cumulative,
+					"@DD", MAXX ( FILTER ( Cumulative, dim_Date[calendar_date] <= EARLIER ( dim_Date[calendar_date] ) ), [@Cumul] ) - [@Cumul]
+				)
+			RETURN MAXX ( WithDD, [@DD] )
+		formatString: #,##0.00 €
+		displayFolder: Risk
+		lineageTag: f100000d-0032-0000-0000-000000000000
+
+	/// KPI-TR-031 — Max drawdown as a percentage of capital baseline.
+	measure 'Max Drawdown' = DIVIDE ( [Max Drawdown EUR], [Capital Baseline] )
+		formatString: 0.0%
+		displayFolder: Risk
+		lineageTag: f100000d-0033-0000-0000-000000000000
+
+	/// KPI-TR-033 — Annualised Sharpe ratio (RF = 0) on the daily net PnL series. BLANK under 5 active days.
+	measure 'Sharpe Ratio' =
+			VAR Days = CALCULATETABLE ( VALUES ( dim_Date[calendar_date] ), fact_DailyTraderPnL )
+			VAR Mean = AVERAGEX ( Days, [_Daily Net PnL] )
+			VAR SD = STDEVX.S ( Days, [_Daily Net PnL] )
+			VAR N = COUNTROWS ( Days )
+			RETURN IF ( N >= 5 && SD <> 0, DIVIDE ( Mean, SD ) * SQRT ( 252 ), BLANK () )
+		formatString: 0.00
+		displayFolder: Risk
+		lineageTag: f100000d-0034-0000-0000-000000000000
+
+	/// KPI-TR-034 — Annualised Sortino ratio (RF = 0); penalises only downside volatility.
+	measure 'Sortino Ratio' =
+			VAR Days = CALCULATETABLE ( VALUES ( dim_Date[calendar_date] ), fact_DailyTraderPnL )
+			VAR Mean = AVERAGEX ( Days, [_Daily Net PnL] )
+			VAR DownsideSD = STDEVX.S ( FILTER ( Days, [_Daily Net PnL] < 0 ), [_Daily Net PnL] )
+			VAR N = COUNTROWS ( Days )
+			RETURN IF ( N >= 5 && DownsideSD <> 0, DIVIDE ( Mean, DownsideSD ) * SQRT ( 252 ), BLANK () )
+		formatString: 0.00
+		displayFolder: Risk
+		lineageTag: f100000d-0035-0000-0000-000000000000
+
+	/// KPI-TR-040 — Historical VaR at 95% (5th percentile of daily net PnL). Needs >= 20 active days.
+	measure 'VaR 95 Pct' =
+			VAR Days = CALCULATETABLE ( VALUES ( dim_Date[calendar_date] ), fact_DailyTraderPnL )
+			RETURN IF ( COUNTROWS ( Days ) >= 20, PERCENTILEX.INC ( Days, [_Daily Net PnL], 0.05 ), BLANK () )
+		formatString: #,##0.00 €
+		displayFolder: Risk
+		lineageTag: f100000d-0036-0000-0000-000000000000
+
+	/// KPI-TR-036 — Gross profit divided by gross loss over closed trades. > 1 = net profitable.
+	measure 'Profit Factor' =
+			VAR GrossProfit = CALCULATE ( SUM ( fact_Trades[net_pnl_eur] ), fact_Trades[is_open] = FALSE (), fact_Trades[net_pnl_eur] > 0 )
+			VAR GrossLoss = ABS ( CALCULATE ( SUM ( fact_Trades[net_pnl_eur] ), fact_Trades[is_open] = FALSE (), fact_Trades[net_pnl_eur] < 0 ) )
+			RETURN DIVIDE ( GrossProfit, GrossLoss )
+		formatString: 0.00
+		displayFolder: Risk
+		lineageTag: f100000d-0037-0000-0000-000000000000
+
+	/// KPI-TR-035 — Average winning trade divided by absolute average losing trade.
+	measure 'Win Loss Ratio' =
+			VAR AvgWin = CALCULATE ( AVERAGE ( fact_Trades[net_pnl_eur] ), fact_Trades[is_open] = FALSE (), fact_Trades[net_pnl_eur] > 0 )
+			VAR AvgLoss = ABS ( CALCULATE ( AVERAGE ( fact_Trades[net_pnl_eur] ), fact_Trades[is_open] = FALSE (), fact_Trades[net_pnl_eur] < 0 ) )
+			RETURN DIVIDE ( AvgWin, AvgLoss )
+		formatString: 0.00
+		displayFolder: Risk
+		lineageTag: f100000d-0038-0000-0000-000000000000
+
+	/// KPI-TR-037 — Mean net PnL of winning closed trades.
+	measure 'Average Win' = CALCULATE ( AVERAGE ( fact_Trades[net_pnl_eur] ), fact_Trades[is_open] = FALSE (), fact_Trades[net_pnl_eur] > 0 )
+		formatString: #,##0.00 €
+		displayFolder: Risk
+		lineageTag: f100000d-0039-0000-0000-000000000000
+
+	/// KPI-TR-038 — Mean net PnL of losing closed trades (negative).
+	measure 'Average Loss' = CALCULATE ( AVERAGE ( fact_Trades[net_pnl_eur] ), fact_Trades[is_open] = FALSE (), fact_Trades[net_pnl_eur] < 0 )
+		formatString: #,##0.00 €
+		displayFolder: Risk
+		lineageTag: f100000d-003a-0000-0000-000000000000
+
+	/// KPI-TR-039 — Longest unbroken losing streak. Stub: needs an ordered streak column in the source (Etapa-12).
+	measure 'Max Consecutive Losses' = BLANK ()
+		formatString: #,##0
+		displayFolder: Risk
+		lineageTag: f100000d-003b-0000-0000-000000000000
+
+	/// KPI-TR-060 — Share of closed trades with positive net PnL.
+	measure 'Win Rate' = DIVIDE ( CALCULATE ( COUNTROWS ( fact_Trades ), fact_Trades[is_open] = FALSE (), fact_Trades[net_pnl_eur] > 0 ), [Closed Trades] )
+		formatString: 0.0%
+		displayFolder: Quality
+		lineageTag: f100000d-0040-0000-0000-000000000000
+
+	/// KPI-TR-061 — Share of active trading days with positive net PnL.
+	measure 'Profitable Day Rate' = DIVIDE ( COUNTROWS ( FILTER ( CALCULATETABLE ( VALUES ( dim_Date[calendar_date] ), fact_DailyTraderPnL ), [_Daily Net PnL] > 0 ) ), [Active Trading Days] )
+		formatString: 0.0%
+		displayFolder: Quality
+		lineageTag: f100000d-0041-0000-0000-000000000000
+
+	/// KPI-TR-062 — Share of closed trades that ended within +/- 0.01 EUR of break-even.
+	measure 'Break Even Rate' = DIVIDE ( CALCULATE ( COUNTROWS ( fact_Trades ), fact_Trades[is_open] = FALSE (), ABS ( fact_Trades[net_pnl_eur] ) < 0.01 ), [Closed Trades] )
+		formatString: 0.0%
+		displayFolder: Quality
+		lineageTag: f100000d-0042-0000-0000-000000000000
+
+	/// KPI-TR-050 — Mean holding duration (minutes) of closed trades.
+	measure 'Avg Holding' = AVERAGE ( fact_Trades[holding_minutes] )
+		formatString: #,##0.0
+		displayFolder: Behavioral
+		lineageTag: f100000d-0050-0000-0000-000000000000
+
+	/// KPI-TR-052 — Share of closed trades held across a calendar-day boundary.
+	measure 'Overnight Position Frequency' = DIVIDE ( COUNTROWS ( FILTER ( fact_Trades, NOT fact_Trades[is_open] && DATEDIFF ( fact_Trades[time_entry], fact_Trades[time_exit], DAY ) >= 1 ) ) + 0, [Closed Trades] )
+		formatString: 0.0%
+		displayFolder: Behavioral
+		lineageTag: f100000d-0051-0000-0000-000000000000
+
+	/// KPI-TR-053 — Share of closed trades whose entry or exit fell on a Saturday or Sunday.
+	measure 'Weekend Carry Frequency' = VAR Carries = COUNTROWS ( FILTER ( fact_Trades, NOT fact_Trades[is_open] && NOT ISBLANK ( fact_Trades[time_exit] ) && ( INT ( fact_Trades[time_entry] ) + ( 6 - WEEKDAY ( INT ( fact_Trades[time_entry] ), 2 ) ) ) <= INT ( fact_Trades[time_exit] ) ) ) RETURN DIVIDE ( Carries + 0, [Closed Trades] )
+		formatString: 0.0%
+		displayFolder: Behavioral
+		lineageTag: f100000d-0052-0000-0000-000000000000
+
+	/// KPI-TR-054 — Share of closed trades opened and closed on the same calendar day.
+	measure 'Intraday Rate' = DIVIDE ( COUNTROWS ( FILTER ( fact_Trades, NOT fact_Trades[is_open] && DATEDIFF ( fact_Trades[time_entry], fact_Trades[time_exit], DAY ) = 0 ) ) + 0, [Closed Trades] )
+		formatString: 0.0%
+		displayFolder: Behavioral
+		lineageTag: f100000d-0053-0000-0000-000000000000
+
+	/// KPI-TR-055 — Hour of day (0-23) with the highest net PnL in context.
+	measure 'Best Trading Hour' =
+			VAR HourPnL = ADDCOLUMNS ( GENERATESERIES ( 0, 23, 1 ), "@PnL", CALCULATE ( [Net PnL], FILTER ( fact_Trades, HOUR ( fact_Trades[time_entry] ) = [Value] ) ) )
+			RETURN MAXX ( TOPN ( 1, HourPnL, [@PnL], DESC ), [Value] )
+		formatString: #,##0
+		displayFolder: Behavioral
+		lineageTag: f100000d-0054-0000-0000-000000000000
+
+	/// KPI-TM-070 — Rank of the team by MTD net PnL among teams on the same floor.
+	measure 'Team Rank within Floor' = RANKX ( CALCULATETABLE ( VALUES ( dim_Teams[team_id] ), ALLEXCEPT ( dim_Teams, dim_Teams[floor_id] ) ), [MTD Net PnL], , DESC, DENSE )
+		formatString: #,##0
+		displayFolder: Org Aggregates
+		lineageTag: f100000d-0060-0000-0000-000000000000
+
+	/// KPI-TM-071 — Rank of the team by MTD net PnL among all company teams.
+	measure 'Team Rank within Company' = RANKX ( ALL ( dim_Teams[team_id] ), [MTD Net PnL], , DESC, DENSE )
+		formatString: #,##0
+		displayFolder: Org Aggregates
+		lineageTag: f100000d-0061-0000-0000-000000000000
+
+	/// KPI-TM-072 — Team net PnL as a share of its floor's net PnL.
+	measure 'Contribution to Floor PnL' = DIVIDE ( [Net PnL], CALCULATE ( [Net PnL], ALLEXCEPT ( dim_Employees, dim_Employees[floor_id] ) ) )
+		formatString: 0.0%
+		displayFolder: Org Aggregates
+		lineageTag: f100000d-0062-0000-0000-000000000000
+
+	/// KPI-TM-073 — Standard deviation of individual traders' net PnL within the team.
+	measure 'Intra Team PnL Variance' = STDEVX.S ( VALUES ( dim_Employees[employee_id] ), CALCULATE ( [Net PnL] ) )
+		formatString: #,##0.00 €
+		displayFolder: Org Aggregates
+		lineageTag: f100000d-0063-0000-0000-000000000000
+
+	/// KPI-FL-070 — Rank of the floor by return on capital among all floors.
+	measure 'Floor Rank' = RANKX ( ALL ( dim_TradingFloors[floor_id] ), [Return on Capital], , DESC, DENSE )
+		formatString: #,##0
+		displayFolder: Org Aggregates
+		lineageTag: f100000d-0064-0000-0000-000000000000
+
+	/// KPI-FL-071 — Floor net PnL as a share of company net PnL.
+	measure 'Floor Contribution to Company PnL' = DIVIDE ( [Net PnL], CALCULATE ( [Net PnL], ALL ( dim_Employees ), ALL ( dim_Teams ), ALL ( dim_TradingFloors ) ) )
+		formatString: 0.0%
+		displayFolder: Org Aggregates
+		lineageTag: f100000d-0065-0000-0000-000000000000
+
+	/// KPI-FL-072 — Cumulative net PnL over the trailing 30 calendar days.
+	measure 'Floor 30 Day Rolling Net PnL' = VAR d = MAX ( fact_Trades[trade_date_ro] ) RETURN CALCULATE ( [Net PnL], DATESINPERIOD ( dim_Date[calendar_date], d, -30, DAY ) )
+		formatString: #,##0.00 €
+		displayFolder: Org Aggregates
+		lineageTag: f100000d-0066-0000-0000-000000000000
+
+	/// KPI-LR-001 — Average trader net PnL in context divided by the floor average trader net PnL.
+	measure 'Team Lead PnL Multiplier' =
+			VAR TraderAvg = CALCULATE ( DIVIDE ( [Net PnL], DISTINCTCOUNT ( fact_DailyTraderPnL[employee_id] ) ), dim_Employees[employee_role] = "trader" )
+			VAR FloorAvg = CALCULATE ( DIVIDE ( [Net PnL], DISTINCTCOUNT ( fact_DailyTraderPnL[employee_id] ) ), dim_Employees[employee_role] = "trader", ALLEXCEPT ( dim_Employees, dim_Employees[floor_id] ) )
+			RETURN DIVIDE ( TraderAvg, FloorAvg )
+		formatString: 0.00
+		displayFolder: Leadership
+		lineageTag: f100000d-0070-0000-0000-000000000000
+
+	/// KPI-LR-002 — Share of floor teams whose team lead traded in the last 7 calendar days.
+	measure 'Floor Manager Coverage Index' =
+			VAR Today = MAX ( fact_Trades[trade_date_ro] )
+			VAR ActiveLeadTeams = CALCULATE ( DISTINCTCOUNT ( dim_Employees[team_id] ), dim_Employees[employee_role] = "team_lead", DATESINPERIOD ( dim_Date[calendar_date], Today, -7, DAY ) )
+			VAR FloorTeams = CALCULATE ( DISTINCTCOUNT ( dim_Teams[team_id] ), ALLEXCEPT ( dim_Teams, dim_Teams[floor_id] ) )
+			RETURN DIVIDE ( ActiveLeadTeams, FloorTeams )
+		formatString: 0.0%
+		displayFolder: Leadership
+		lineageTag: f100000d-0071-0000-0000-000000000000
+
+	/// KPI-LR-003 — Rank of the team by intra-team PnL variance within the floor (lower variance = rank 1).
+	measure 'Intra Team Variance Rank' = RANKX ( CALCULATETABLE ( VALUES ( dim_Teams[team_id] ), ALLEXCEPT ( dim_Teams, dim_Teams[floor_id] ) ), [Intra Team PnL Variance], , ASC, DENSE )
+		formatString: #,##0
+		displayFolder: Leadership
+		lineageTag: f100000d-0072-0000-0000-000000000000
+
+	/// KPI-LR-004 — Team lead's own net PnL relative to the team's average net PnL per member.
+	measure 'Team Lead Personal vs Team Average' =
+			VAR LeadPnL = CALCULATE ( [Net PnL], dim_Employees[employee_role] = "team_lead" )
+			VAR TeamAvg = DIVIDE ( [Net PnL], DISTINCTCOUNT ( fact_DailyTraderPnL[employee_id] ) )
+			RETURN DIVIDE ( LeadPnL, TeamAvg )
+		formatString: 0.00
+		displayFolder: Leadership
+		lineageTag: f100000d-0073-0000-0000-000000000000
+
+	column placeholder
+		dataType: int64
+		isHidden
+		formatString: #,##0
+		lineageTag: f100000d-00ff-0000-0000-000000000000
+		summarizeBy: none
+		sourceColumn: [Value]
+
+	partition _Measures_partition = calculated
+		mode: import
+		source = {0}
+

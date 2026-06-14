@@ -1,0 +1,32 @@
+graph TB
+    subgraph External["External services"]
+        DevBrowser["Developer browser"]
+        AnthropicAPI["Anthropic API"]
+    end
+
+    subgraph Azure["Azure (rg-tcp-prod-weu)"]
+        SWA["Static Web App"]
+        HttpAsk["HttpTrigger /api/ask"]
+        HttpPing["HttpTrigger /api/ping"]
+        KV["Key Vault"]
+        SQLDb["Azure SQL Database"]
+    end
+
+    DevBrowser -->|HTTPS + AAD| SWA
+    SWA -->|linked backend| HttpAsk
+    SWA -->|wake-up| HttpPing
+    HttpAsk -->|secret via MI| KV
+    KV -->|API key| HttpAsk
+    HttpAsk -->|validated SELECT| SQLDb
+    SQLDb -->|rows| HttpAsk
+    HttpAsk -->|HTTPS| AnthropicAPI
+    AnthropicAPI -->|sql + answer| HttpAsk
+    HttpPing -->|resume| SQLDb
+
+    classDef azure fill:#0078D4,stroke:#0050A0,color:#fff;
+    classDef external fill:#FFC107,stroke:#8A6D00,color:#000;
+    classDef trigger fill:#107C10,stroke:#004B1C,color:#fff;
+
+    class SWA,KV,SQLDb azure;
+    class DevBrowser,AnthropicAPI external;
+    class HttpAsk,HttpPing trigger;

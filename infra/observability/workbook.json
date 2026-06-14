@@ -1,0 +1,235 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# TCP — Trading Central Panel · Operations dashboard\n\n**Audience**: on-call operator (single user during the academic phase) and reviewer.  \n**Refresh**: manual — click the refresh button in the toolbar after changing the **Time range** parameter (academic-phase posture per obs-MI-07; auto-refresh deferred to Etapa-12 polish).  \n**SLOs**: see `docs/observability/slo.md` for the formal SLI/SLO definitions and burn-rate alerts.\n\nQueries are mirrored in `infra/observability/kusto/*.kql` (single source of truth). When you tweak a query in the portal, **mirror the change back into the .kql file in the same PR** — the workbook is `isLocked: true` to prevent accidental drift.\n\n---"
+      },
+      "name": "header"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "tcp-time-range",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                { "durationMs": 3600000 },
+                { "durationMs": 14400000 },
+                { "durationMs": 86400000 },
+                { "durationMs": 172800000 },
+                { "durationMs": 604800000 },
+                { "durationMs": 2592000000 }
+              ]
+            }
+          }
+        ]
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## SLI-1 — `/api/ask` assistant latency\n\np95 latency target: **≤ 3 000 ms** (warm requests). The alert `tcp-alert-ask-p95-latency` fires when p95 exceeds **4 000 ms** for 15 minutes."
+      },
+      "name": "section-latency"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where operation_Name == \"ask\"\n| where success == true\n| where timestamp {TimeRange}\n| summarize p50_ms=percentile(duration, 50), p95_ms=percentile(duration, 95), p99_ms=percentile(duration, 99), samples=count() by bin(timestamp, 1h)\n| where samples > 5\n| order by timestamp asc\n| render timechart",
+        "size": 1,
+        "title": "Assistant latency p50 / p95 / p99 (successful warm requests only)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "tile-latency"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp {TimeRange}\n| summarize total=count(), failed=countif(success == false) by operation_Name\n| extend error_rate_pct = round(100.0 * failed / iif(total == 0, 1, total), 2)\n| order by error_rate_pct desc",
+        "size": 1,
+        "title": "Error rate by operation",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "gridSettings": {
+          "formatters": [
+            {
+              "columnMatch": "error_rate_pct",
+              "formatter": 8,
+              "formatOptions": {
+                "palette": "redGreen"
+              }
+            }
+          ]
+        }
+      },
+      "name": "tile-error-rate"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## SLI-2 — Daily generator outcomes\n\nTarget: **≥ 99 % success** over a rolling 30-day window. Alert `tcp-alert-daily-generator-failed` fires on any single failure within the previous 24 hours."
+      },
+      "name": "section-generator"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where operation_Name == \"daily_generator\"\n| where timestamp {TimeRange}\n| extend day_ro = bin(timestamp, 1d)\n| summarize Runs=count(), Successes=countif(success == true), Failures=countif(success == false) by day_ro\n| extend success_rate_pct = round(100.0 * Successes / iif(Runs == 0, 1, Runs), 2)\n| order by day_ro asc",
+        "size": 1,
+        "title": "Daily generator runs vs failures",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table"
+      },
+      "name": "tile-generator"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Anthropic token usage and EUR cost projection\n\nBudget: see `docs/observability/slo.md` § cost guardrails. The alert `tcp-alert-anthropic-cost-burn` fires when the rolling 7-day spend projects above **€10/month**."
+      },
+      "name": "section-tokens"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let usd_per_token_input = 1.0/1000000.0;\nlet usd_per_token_output = 5.0/1000000.0;\nlet usd_per_token_cache_read = 0.1/1000000.0;\nlet usd_to_eur = 0.92;\nlet from_traces = traces\n  | where timestamp {TimeRange}\n  | where customDimensions[\"event\"] == \"tcp.ask.metrics\"\n  | extend in_t = todouble(customDimensions[\"metric_input_tokens\"]),\n           out_t = todouble(customDimensions[\"metric_output_tokens\"]),\n           cr_t = todouble(customDimensions[\"metric_cache_read_tokens\"])\n  | project timestamp, in_t, out_t, cr_t;\nlet from_metrics = customMetrics\n  | where timestamp {TimeRange}\n  | where name in (\"tcp.ask.input_tokens\", \"tcp.ask.output_tokens\", \"tcp.ask.cache_read_tokens\")\n  | summarize value = sum(value) by name, timestamp\n  | evaluate pivot(name, sum(value), timestamp)\n  | extend in_t = coalesce(column_ifexists(\"tcp.ask.input_tokens\", real(0)), 0.0),\n           out_t = coalesce(column_ifexists(\"tcp.ask.output_tokens\", real(0)), 0.0),\n           cr_t = coalesce(column_ifexists(\"tcp.ask.cache_read_tokens\", real(0)), 0.0)\n  | project timestamp, in_t, out_t, cr_t;\nunion from_traces, from_metrics\n| summarize input_tokens=sum(in_t), output_tokens=sum(out_t), cache_read_tokens=sum(cr_t) by bin(timestamp, 1d)\n| extend est_eur = (input_tokens*usd_per_token_input + output_tokens*usd_per_token_output + cache_read_tokens*usd_per_token_cache_read) * usd_to_eur\n| project timestamp, input_tokens, output_tokens, cache_read_tokens, est_eur\n| order by timestamp asc",
+        "size": 1,
+        "title": "Anthropic tokens + EUR estimate",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table"
+      },
+      "name": "tile-tokens"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Function App cold starts\n\nIndicator for the AskAssistant cold-path latency. Sustained cold-start spikes during business hours (Mon–Fri 09:00–18:00 RO) suggest the warmup timer is not firing as expected."
+      },
+      "name": "section-cold-starts"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp {TimeRange}\n| where customDimensions[\"Category\"] == \"Host.Startup\"\n| where message has \"Worker process started\"\n| extend startup_ms = todouble(customDimensions[\"StartupDurationMs\"])\n| extend bucket = case(isnull(startup_ms), \"unknown\", startup_ms <= 1000, \"warm\", startup_ms <= 2000, \"lukewarm\", \"cold\")\n| summarize cold=countif(bucket == \"cold\"), lukewarm=countif(bucket == \"lukewarm\"), warm=countif(bucket == \"warm\"), unknown=countif(bucket == \"unknown\") by bin(timestamp, 1h)\n| order by timestamp asc\n| render timechart",
+        "size": 1,
+        "title": "Cold vs warm worker starts",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "tile-cold-starts"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Azure SQL Free-Offer vCore-second budget\n\nFree grant: **100 000 vCore-seconds / month** (resets first day of the calendar month UTC). Alert `tcp-alert-sql-quota-burn` fires at 80 % consumption."
+      },
+      "name": "section-sql-vcore"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let monthly_quota = 100000.0;\nAzureMetrics\n| where ResourceProvider == \"MICROSOFT.SQL\"\n| where MetricName == \"app_cpu_billed\"\n| where TimeGenerated > startofmonth(now())\n| summarize used = sum(Total) by bin(TimeGenerated, 1d), Resource\n| partition by Resource (sort by TimeGenerated asc | extend cumulative = row_cumsum(used))\n| extend pct_used = round(100.0 * cumulative / monthly_quota, 2)\n| project TimeGenerated, Resource, used, cumulative, pct_used",
+        "size": 1,
+        "title": "SQL vCore-second consumption (month-to-date)",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "tile-sql-vcore"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## BACPAC weekly export health (ADR-004)\n\nEvery Sunday 08:00 RO. Alert `tcp-alert-bacpac-missed` fires when no `tcp.bacpac.complete` event lands within the previous 8 days."
+      },
+      "name": "section-bacpac"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp > ago(30d)\n| where customDimensions[\"event\"] in (\"tcp.bacpac.complete\", \"tcp.bacpac.failed\", \"tcp.bacpac.skipped\")\n| extend duration_ms = tolong(customDimensions[\"duration_ms\"]), size_bytes = tolong(customDimensions[\"size_bytes\"]), status = tostring(customDimensions[\"status\"])\n| summarize runs=count(), successes=countif(status == \"succeeded\"), skipped=countif(status == \"already_exists\"), failures=countif(status in (\"failed\", \"Failed\", \"Canceled\")), avg_duration_ms=avg(duration_ms), avg_size_mb=round(avg(size_bytes)/1024.0/1024.0, 2) by bin(timestamp, 7d)\n| order by timestamp desc",
+        "size": 1,
+        "title": "BACPAC weekly health",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table"
+      },
+      "name": "tile-bacpac"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Rate-limit refusals (`/api/ask` 429 returns)\n\nAlert `tcp-alert-rate-limit-spike` fires when refusals exceed **50/h**."
+      },
+      "name": "section-rate-limit"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp {TimeRange}\n| where message has \"tcp.func.ask.rate_limited\"\n| extend oid_suffix = tostring(customDimensions[\"oid_suffix\"])\n| summarize refusals=count(), distinct_oid_suffixes=dcount(oid_suffix) by bin(timestamp, 1h)\n| order by timestamp asc\n| render timechart",
+        "size": 1,
+        "title": "Rate-limit refusals",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart"
+      },
+      "name": "tile-rate-limit"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "## Question fingerprints (PII-redacted)\n\nSHA-256 hashes only — the original prompt text is **never** persisted (see `docs/security/threat_model.md` S05 + the `tests/integration/test_telemetry_no_pii.py` enforcement test). Use this list to spot abusive repetition or to verify the audit hook is wired."
+      },
+      "name": "section-audit"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "traces\n| where timestamp > ago(30d)\n| where customDimensions[\"event\"] == \"tcp.ask.audit\"\n| extend q_hash = tostring(customDimensions[\"question_sha256\"])\n| where isnotempty(q_hash)\n| summarize last_seen=max(timestamp), occurrences=count() by q_hash\n| top 50 by last_seen desc",
+        "size": 1,
+        "title": "Last 50 distinct question fingerprints",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table"
+      },
+      "name": "tile-audit"
+    }
+  ],
+  "isLocked": true,
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

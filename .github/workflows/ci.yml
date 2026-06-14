@@ -1,0 +1,270 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "feat/**"]
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-analysis:
+    name: static-analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Third-party action — pinned to a full commit SHA for supply-chain security.
+      # Pinned to v8.1.0; Dependabot will manage quarterly updates via pull requests.
+      - name: set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install dependencies
+        run: uv sync --all-extras
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format check
+        run: uv run ruff format --check .
+
+      - name: mypy strict
+        # Etapa-11 close of code10-MN-01: full strict coverage now includes
+        # `function_app/`. The package-discovery collision (`triggers/` seen
+        # as both `triggers` and `function_app.triggers`) is resolved by
+        # `explicit_package_bases = true` + `mypy_path = ["."]` in the
+        # `[tool.mypy]` block of pyproject.toml.
+        run: uv run mypy tcp tests scripts function_app
+
+  python-unit:
+    name: python-unit
+    runs-on: ubuntu-24.04
+    needs: static-analysis
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Third-party action — pinned to a full commit SHA for supply-chain security.
+      # Pinned to v8.1.0; Dependabot will manage quarterly updates via pull requests.
+      - name: set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install dependencies
+        run: uv sync --all-extras
+
+      - name: pytest unit tests
+        # Includes the PII-redaction sanity test under tests/integration/ —
+        # it lives there per the Etapa-8 spec but has no live-env dependencies
+        # (the Anthropic + SQL calls are monkeypatched), so it ships in the
+        # fast unit job so a regression blocks merge.
+        run: uv run pytest tests/unit tests/integration/test_telemetry_no_pii.py -v --cov=tcp --cov=function_app --cov-report=xml --cov-fail-under=90
+
+      - name: upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  sql-lint:
+    name: sql-lint
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Third-party action — pinned to a full commit SHA for supply-chain security.
+      # Pinned to v8.1.0; Dependabot will manage quarterly updates via pull requests.
+      - name: set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install dependencies
+        run: uv sync --all-extras
+
+      - name: sqlfluff lint db/ and tests/sql/
+        run: uv run sqlfluff lint db/ tests/sql/ --dialect tsql
+
+      - name: validate naming convention
+        run: uv run python scripts/validate_naming_convention.py db/migrations/ tests/sql/
+
+      - name: compute migration checksums (RR-09 gate)
+        # Asserts every db/migrations/V*.sql canonicalises to a valid SHA-256.
+        # Catches encoding regressions and missing-file drift before merge.
+        # The actual schema_history insertion happens in postprovision; this
+        # step only proves the deterministic compute path keeps working.
+        run: uv run python scripts/compute_migration_checksum.py --ci
+
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Third-party action — pinned to a full commit SHA for supply-chain security.
+      # Pinned to v8.1.0; Dependabot will manage quarterly updates via pull requests.
+      - name: set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install dependencies
+        run: uv sync --all-extras
+
+      # Third-party action with access to GITHUB_TOKEN — pin to a full commit SHA
+      # to defend against tag-mutation supply-chain attacks.
+      # Pinned to v2.3.9; Dependabot will manage quarterly updates via pull requests.
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: bandit security scan
+        run: uv run bandit -r tcp function_app -lll -iii
+
+      - name: pip-audit dependencies
+        run: uv run pip-audit --strict
+
+  iac-validate:
+    name: iac-validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up bicep
+        uses: azure/setup-bicep@v1
+
+      - name: bicep build
+        run: |
+          bicep build infra/main.bicep -o /tmp/main.json
+          if [ $? -ne 0 ]; then
+            echo "ERROR: Bicep build failed"
+            exit 1
+          fi
+
+      - name: bicep template validation
+        run: |
+          az deployment sub validate \
+            --location westeurope \
+            --template-file /tmp/main.json \
+            --parameters @infra/main.parameters.prod.json \
+            --no-pretty-print || exit 1
+
+      - name: install psrule for azure
+        run: |
+          pwsh -Command "
+            Install-Module -Name PSRule.Rules.Azure -Force -Confirm:$false
+          "
+
+      - name: psrule lint bicep
+        run: |
+          pwsh -Command "
+            ps-rule run -Module PSRule.Rules.Azure \
+              -InputPath infra/ \
+              -Outcome Fail \
+              -o Raw | Select-Object RuleId, Pass, Fail, Error
+          "
+
+      - name: set up checkov
+        run: |
+          python -m pip install --upgrade pip
+          pip install checkov
+
+      - name: checkov scan bicep
+        run: |
+          checkov --framework bicep \
+            --directory infra/ \
+            --soft-fail-on LOW \
+            --hard-fail-on MEDIUM,HIGH,CRITICAL
+
+  iac-whatif:
+    name: iac-whatif
+    if: github.event_name == 'pull_request'
+    needs: iac-validate
+    runs-on: ubuntu-24.04
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: azure login via OIDC (reader role)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: bicep what-if
+        # NOTE: `|| true` is intentional. This job is informational only —
+        # the what-if output is posted as a PR comment, but a non-zero exit
+        # from az (e.g., because no prior deployment exists) must not fail
+        # the build. The summary step below renders the captured output;
+        # reviewers read the comment and decide whether the diff is safe.
+        run: |
+          az deployment sub what-if \
+            --location westeurope \
+            --template-file infra/main.bicep \
+            --parameters @infra/main.parameters.prod.json \
+            --no-pretty-print \
+            --result-format FullResourcePayloads \
+            2>&1 | tee whatif-output.txt || true
+
+      - name: post what-if summary
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const whatif = fs.readFileSync('whatif-output.txt', 'utf8');
+            const lines = whatif.split('\n').slice(0, 100);
+            const summary = '```\n' + lines.join('\n') + '\n```';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## Infrastructure What-If Summary\n\n' + summary
+            });
+

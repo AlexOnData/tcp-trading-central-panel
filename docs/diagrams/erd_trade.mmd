@@ -1,0 +1,30 @@
+%%{init: {"er": {"layoutDirection": "LR"}}}%%
+erDiagram
+
+    DIM_ACCOUNTS ||--o{ FACT_TRADES : ""
+    DIM_EMPLOYEES ||--o{ FACT_TRADES : ""
+    DIM_MARKETS ||--o{ FACT_TRADES : ""
+    DIM_SESSIONS ||--o{ FACT_TRADES : ""
+    DIM_ORDERTYPE ||--o{ FACT_TRADES : ""
+    DIM_DATE ||--o{ FACT_TRADES : ""
+
+    FACT_TRADES {
+        varchar trade_uid PK
+        int trader_id FK
+        int account_id FK
+        int market_id FK
+        int session_id FK
+        int order_type_id FK
+        date trade_date_ro FK
+        char side
+        dec quantity
+        dec price_entry
+        dec price_exit
+        dto time_entry
+        dto time_exit
+        dec gross_pnl_eur
+        dec commission_eur
+        dec net_pnl_eur
+        dec fx_rate_to_eur
+        bit is_open
+    }

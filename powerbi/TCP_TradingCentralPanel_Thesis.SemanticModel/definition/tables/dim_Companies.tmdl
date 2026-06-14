@@ -1,0 +1,58 @@
+table dim_Companies
+	lineageTag: f1000001-0000-0000-0000-000000000000
+
+	column company_id
+		dataType: int64
+		isHidden
+		isKey
+		lineageTag: f1000001-0000-0000-0000-000000000001
+		summarizeBy: none
+		sourceColumn: company_id
+
+	column legal_name
+		dataType: string
+		lineageTag: f1000001-0000-0000-0000-000000000002
+		summarizeBy: none
+		sourceColumn: legal_name
+
+	column short_name
+		dataType: string
+		lineageTag: f1000001-0000-0000-0000-000000000003
+		summarizeBy: none
+		sourceColumn: short_name
+
+	column country_code
+		dataType: string
+		lineageTag: f1000001-0000-0000-0000-000000000004
+		summarizeBy: none
+		sourceColumn: country_code
+
+	column base_currency
+		dataType: string
+		lineageTag: f1000001-0000-0000-0000-000000000005
+		summarizeBy: none
+		sourceColumn: base_currency
+
+	column created_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000001-0000-0000-0000-000000000006
+		summarizeBy: none
+		sourceColumn: created_at
+
+	column updated_at
+		dataType: dateTime
+		isHidden
+		lineageTag: f1000001-0000-0000-0000-000000000007
+		summarizeBy: none
+		sourceColumn: updated_at
+
+	partition dim_Companies_partition = m
+		mode: import
+		source =
+				let
+					Source = Sql.Database(SqlServer, SqlDatabase),
+					Data = Source{[Schema="dbo", Item="dim_Companies"]}[Data]
+				in
+					Data
+

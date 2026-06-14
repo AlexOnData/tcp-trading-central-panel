@@ -1,0 +1,28 @@
+%% Deployment pipeline — GitHub Actions OIDC → azd → postprovision → smoke
+%%
+%% Etapa-13 deliverable per ADR-006 D-8. This is a stub for build pipeline
+%% validation; the final diagram is refined during Etapa-13 chapter prose
+%% (Ch. 4 §4.3 or Ch. 5 §5.5).
+%%
+%% Source-of-truth for the actual flow: `.github/workflows/cd.yml` +
+%% `infra/scripts/postprovision.{ps1,sh}` + `docs/design/03_architecture.md` §13.
+flowchart LR
+    classDef ci fill:#dbe9ff,stroke:#1f6feb,color:#000
+    classDef azure fill:#fff6d6,stroke:#c08d00,color:#000
+    classDef gate fill:#e6ffe6,stroke:#2da44e,color:#000
+
+    dev[Developer push to main]:::ci
+    gha[GitHub Actions cd.yml]:::ci
+    oidc[OIDC federated credential<br/>sub: repo:OWNER/REPO:environment:prod]:::ci
+    azd[azd provision + deploy]:::azure
+    bicep[Bicep modules<br/>main.bicep → 9 modules]:::azure
+    pp[postprovision.ps1 / sh<br/>8 idempotent steps]:::azure
+    smoke[Smoke job<br/>/api/ping + schema_history check]:::gate
+
+    dev --> gha
+    gha -->|federated token| oidc
+    oidc -->|Azure Resource Manager| azd
+    azd --> bicep
+    bicep --> pp
+    pp --> smoke
+    smoke -->|green| dev
